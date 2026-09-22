@@ -1,0 +1,19 @@
+{
+  "admins": [
+    {
+      "email": "hashim@redwings.com",
+      "password": "REPLACE_WITH_SECURE_PASSWORD",
+      "full_name": "Hashim"
+    },
+    {
+      "email": "ar@redwings.com",
+      "password": "REPLACE_WITH_SECURE_PASSWORD",
+      "full_name": "Abdul Rehman"
+    },
+    {
+      "email": "mujahid@redwings.com",
+      "password": "REPLACE_WITH_SECURE_PASSWORD",
+      "full_name": "Mujahid"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+# Minimal Supabase CLI config for local development.
+# See https://supabase.com/docs/guides/cli/config
+
+project_id = "red-wings-cricket"
+
+[db]
+major_version = 15
+
+[api]
+enabled = true
+
+[realtime]
+enabled = true

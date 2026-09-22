@@ -1,0 +1,9 @@
+-- Red Wings Cricket — intentionally no production seed data.
+-- Do NOT insert fake players, matches, or statistics here.
+--
+-- After creating Supabase Auth users for Hashim, Abdul Rehman, and Mujahid,
+-- promote each to admin manually, for example:
+--
+-- UPDATE public.profiles
+-- SET role = 'admin', full_name = 'Hashim'
+-- WHERE id = '<auth-user-uuid>';
