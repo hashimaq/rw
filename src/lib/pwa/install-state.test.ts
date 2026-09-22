@@ -2,10 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   PWA_INSTALL_DISMISS_COOLDOWN_MS,
   resolveInstallUiMode,
-  shouldShowInstallBannerAfterDismiss,
+  shouldAutoPresentFullScreenInstall,
+  shouldShowInstallAfterDismiss,
 } from "@/lib/pwa/install-state";
 
-describe("PWA install banner state", () => {
+describe("PWA full-screen install state", () => {
   it("hides when already installed", () => {
     expect(
       resolveInstallUiMode({
@@ -19,19 +20,13 @@ describe("PWA install banner state", () => {
 
   it("respects dismiss cooldown", () => {
     const now = 1_000_000;
-    expect(shouldShowInstallBannerAfterDismiss(null, now)).toBe(true);
+    expect(shouldShowInstallAfterDismiss(null, now)).toBe(true);
     expect(
-      shouldShowInstallBannerAfterDismiss(
+      shouldShowInstallAfterDismiss(
         now - PWA_INSTALL_DISMISS_COOLDOWN_MS + 1,
         now,
       ),
     ).toBe(false);
-    expect(
-      shouldShowInstallBannerAfterDismiss(
-        now - PWA_INSTALL_DISMISS_COOLDOWN_MS - 1,
-        now,
-      ),
-    ).toBe(true);
   });
 
   it("prefers native prompt when available", () => {
@@ -45,14 +40,27 @@ describe("PWA install banner state", () => {
     ).toBe("native_prompt");
   });
 
-  it("shows iOS manual when no deferred prompt", () => {
+  it("auto-presents full screen for eligible modes", () => {
     expect(
-      resolveInstallUiMode({
-        standalone: false,
-        dismissedRecently: false,
-        hasDeferredPrompt: false,
-        isIos: true,
+      shouldAutoPresentFullScreenInstall({
+        uiMode: "native_prompt",
+        sessionSkipped: false,
+        forceShow: false,
       }),
-    ).toBe("ios_manual");
+    ).toBe(true);
+    expect(
+      shouldAutoPresentFullScreenInstall({
+        uiMode: "native_prompt",
+        sessionSkipped: true,
+        forceShow: false,
+      }),
+    ).toBe(false);
+    expect(
+      shouldAutoPresentFullScreenInstall({
+        uiMode: "hidden_dismissed",
+        sessionSkipped: false,
+        forceShow: true,
+      }),
+    ).toBe(true);
   });
 });

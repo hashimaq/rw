@@ -1,4 +1,5 @@
 export const PWA_INSTALL_DISMISSED_KEY = "rw_pwa_install_dismissed_at";
+export const PWA_INSTALL_SESSION_SKIP_KEY = "rw_pwa_install_session_skip";
 export const PWA_INSTALL_DISMISS_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
 
 export function isStandaloneDisplayMode(): boolean {
@@ -14,12 +15,25 @@ export function isIosDevice(): boolean {
   return /iphone|ipad|ipod/i.test(navigator.userAgent);
 }
 
-export function shouldShowInstallBannerAfterDismiss(
+export function shouldShowInstallAfterDismiss(
   dismissedAtMs: number | null,
   nowMs: number,
 ): boolean {
   if (dismissedAtMs == null) return true;
   return nowMs - dismissedAtMs >= PWA_INSTALL_DISMISS_COOLDOWN_MS;
+}
+
+/** @deprecated alias */
+export const shouldShowInstallBannerAfterDismiss = shouldShowInstallAfterDismiss;
+
+export function isInstallSkippedThisSession(): boolean {
+  if (typeof sessionStorage === "undefined") return false;
+  return sessionStorage.getItem(PWA_INSTALL_SESSION_SKIP_KEY) === "1";
+}
+
+export function markInstallSkippedThisSession(): void {
+  if (typeof sessionStorage === "undefined") return;
+  sessionStorage.setItem(PWA_INSTALL_SESSION_SKIP_KEY, "1");
 }
 
 export type InstallUiMode =
@@ -34,10 +48,25 @@ export function resolveInstallUiMode(input: {
   dismissedRecently: boolean;
   hasDeferredPrompt: boolean;
   isIos: boolean;
+  forceShow?: boolean;
 }): InstallUiMode {
   if (input.standalone) return "hidden_installed";
-  if (input.dismissedRecently) return "hidden_dismissed";
+  if (input.dismissedRecently && !input.forceShow) return "hidden_dismissed";
   if (input.hasDeferredPrompt) return "native_prompt";
   if (input.isIos) return "ios_manual";
   return "manual_unsupported";
+}
+
+export function shouldAutoPresentFullScreenInstall(input: {
+  uiMode: InstallUiMode;
+  sessionSkipped: boolean;
+  forceShow: boolean;
+}): boolean {
+  if (input.forceShow) return true;
+  if (input.sessionSkipped) return false;
+  return (
+    input.uiMode === "native_prompt" ||
+    input.uiMode === "ios_manual" ||
+    input.uiMode === "manual_unsupported"
+  );
 }

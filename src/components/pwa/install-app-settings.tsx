@@ -23,7 +23,7 @@ export function InstallAppSettings() {
       <button
         type="button"
         className="rw-focus-ring rw-btn-primary shrink-0 min-h-11 px-4"
-        onClick={() => pwa.openInstallSheet()}
+        onClick={() => pwa.openInstallExperience()}
       >
         Install App
       </button>

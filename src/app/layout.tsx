@@ -5,7 +5,7 @@ import {
   Geist,
   Geist_Mono,
 } from "next/font/google";
-import { InstallAppBanner } from "@/components/pwa/install-app-banner";
+import { InstallAppFullScreen } from "@/components/pwa/install-app-fullscreen";
 import { PwaProvider } from "@/components/pwa/pwa-provider";
 import { ThemeProvider } from "@/components/theme/theme-provider";
 import "./globals.css";
@@ -74,7 +74,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <ThemeProvider>
           <PwaProvider>
             {children}
-            <InstallAppBanner />
+            <InstallAppFullScreen />
           </PwaProvider>
         </ThemeProvider>
       </body>
