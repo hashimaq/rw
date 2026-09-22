@@ -15,13 +15,19 @@ export default function manifest(): MetadataRoute.Manifest {
     theme_color: "#b91c1c",
     icons: [
       {
-        src: "/brand/red-wings-logo.jpg",
+        src: "/brand/rw-logo.jpg",
         sizes: "512x512",
         type: "image/jpeg",
         purpose: "any",
       },
       {
-        src: "/brand/red-wings-logo.jpg",
+        src: "/brand/rw-logo.jpg",
+        sizes: "192x192",
+        type: "image/jpeg",
+        purpose: "any",
+      },
+      {
+        src: "/brand/rw-logo.jpg",
         sizes: "512x512",
         type: "image/jpeg",
         purpose: "maskable",

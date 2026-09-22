@@ -5,7 +5,7 @@ import {
   Geist,
   Geist_Mono,
 } from "next/font/google";
-import { InstallAppFullScreen } from "@/components/pwa/install-app-fullscreen";
+import { InstallFirstGate } from "@/components/pwa/install-first-gate";
 import { PwaProvider } from "@/components/pwa/pwa-provider";
 import { ThemeProvider } from "@/components/theme/theme-provider";
 import "./globals.css";
@@ -48,8 +48,8 @@ export const metadata: Metadata = {
     statusBarStyle: "default",
   },
   icons: {
-    icon: [{ url: "/brand/red-wings-logo.jpg", type: "image/jpeg" }],
-    apple: [{ url: "/brand/red-wings-logo.jpg", type: "image/jpeg" }],
+    icon: [{ url: "/brand/rw-logo.jpg", type: "image/jpeg" }],
+    apple: [{ url: "/brand/rw-logo.jpg", type: "image/jpeg" }],
   },
 };
 
@@ -73,8 +73,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="min-h-full antialiased transition-colors duration-300">
         <ThemeProvider>
           <PwaProvider>
-            {children}
-            <InstallAppFullScreen />
+            <InstallFirstGate>{children}</InstallFirstGate>
           </PwaProvider>
         </ThemeProvider>
       </body>

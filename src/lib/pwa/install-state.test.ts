@@ -1,66 +1,34 @@
 import { describe, expect, it } from "vitest";
 import {
-  PWA_INSTALL_DISMISS_COOLDOWN_MS,
-  resolveInstallUiMode,
-  shouldAutoPresentFullScreenInstall,
-  shouldShowInstallAfterDismiss,
-} from "@/lib/pwa/install-state";
+  isRedWingsAppUnlocked,
+  resolveInstallPromptMode,
+} from "@/lib/pwa/install-first-gate";
 
-describe("PWA full-screen install state", () => {
-  it("hides when already installed", () => {
-    expect(
-      resolveInstallUiMode({
-        standalone: true,
-        dismissedRecently: false,
-        hasDeferredPrompt: true,
-        isIos: false,
-      }),
-    ).toBe("hidden_installed");
+describe("install-first PWA gate", () => {
+  it("locks app in browser until standalone", () => {
+    expect(isRedWingsAppUnlocked(false, false)).toBe(false);
+    expect(isRedWingsAppUnlocked(true, false)).toBe(true);
   });
 
-  it("respects dismiss cooldown", () => {
-    const now = 1_000_000;
-    expect(shouldShowInstallAfterDismiss(null, now)).toBe(true);
-    expect(
-      shouldShowInstallAfterDismiss(
-        now - PWA_INSTALL_DISMISS_COOLDOWN_MS + 1,
-        now,
-      ),
-    ).toBe(false);
+  it("allows dev bypass only when enabled", () => {
+    expect(isRedWingsAppUnlocked(false, true)).toBe(true);
   });
 
-  it("prefers native prompt when available", () => {
+  it("prefers native prompt when deferred event exists", () => {
     expect(
-      resolveInstallUiMode({
-        standalone: false,
-        dismissedRecently: false,
-        hasDeferredPrompt: true,
-        isIos: true,
-      }),
+      resolveInstallPromptMode({ hasDeferredPrompt: true, isIos: true }),
     ).toBe("native_prompt");
   });
 
-  it("auto-presents full screen for eligible modes", () => {
+  it("uses iOS manual flow when no deferred prompt", () => {
     expect(
-      shouldAutoPresentFullScreenInstall({
-        uiMode: "native_prompt",
-        sessionSkipped: false,
-        forceShow: false,
-      }),
-    ).toBe(true);
+      resolveInstallPromptMode({ hasDeferredPrompt: false, isIos: true }),
+    ).toBe("ios_manual");
+  });
+
+  it("uses manual guidance on unsupported desktop browsers", () => {
     expect(
-      shouldAutoPresentFullScreenInstall({
-        uiMode: "native_prompt",
-        sessionSkipped: true,
-        forceShow: false,
-      }),
-    ).toBe(false);
-    expect(
-      shouldAutoPresentFullScreenInstall({
-        uiMode: "hidden_dismissed",
-        sessionSkipped: false,
-        forceShow: true,
-      }),
-    ).toBe(true);
+      resolveInstallPromptMode({ hasDeferredPrompt: false, isIos: false }),
+    ).toBe("manual_unsupported");
   });
 });
