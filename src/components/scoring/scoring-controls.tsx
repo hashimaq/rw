@@ -14,6 +14,7 @@ export function ScoringKeypad({
   onUndo,
   onOut,
   undoConfirm,
+  scoringEnabled = true,
 }: {
   onRun: (n: number) => void;
   onLegBye: () => void;
@@ -25,6 +26,8 @@ export function ScoringKeypad({
   onUndo: () => void;
   onOut: () => void;
   undoConfirm: boolean;
+  /** When false, only Undo remains active (e.g. new batter required). */
+  scoringEnabled?: boolean;
 }) {
   const keys: {
     id: string;
@@ -68,22 +71,28 @@ export function ScoringKeypad({
       className="bg-[var(--rw-primary)] pb-[env(safe-area-inset-bottom)] text-white shadow-[0_-8px_24px_rgba(15,23,42,0.12)]"
     >
       <div className="grid grid-cols-5">
-        {keys.map((key) => (
+        {keys.map((key) => {
+          const disabled =
+            !scoringEnabled && key.emphasis !== "undo";
+          return (
           <button
             key={key.id}
             type="button"
             aria-label={key.aria}
+            disabled={disabled}
             className={cn(
               "rw-focus-ring flex min-h-[3.35rem] items-center justify-center border-r border-b border-white/20 px-1 text-[0.95rem] font-bold tracking-wide transition-transform active:scale-[0.97] sm:min-h-14",
               key.emphasis === "out" &&
                 "bg-[color-mix(in_srgb,var(--rw-primary)_72%,black)] text-base uppercase",
               key.emphasis === "undo" && undoConfirm && "bg-white/15",
+              disabled && "pointer-events-none opacity-40",
             )}
             onClick={key.onClick}
           >
             {key.label}
           </button>
-        ))}
+        );
+        })}
       </div>
     </section>
   );

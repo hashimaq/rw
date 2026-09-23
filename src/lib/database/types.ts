@@ -46,6 +46,12 @@ export type ScoringSessionStatus =
   | "superseded"
   | "admin_takeover";
 
+export type AiAnalysisStatus =
+  | "pending"
+  | "processing"
+  | "completed"
+  | "failed";
+
 export type ScoringControlTransferStatus =
   | "pending"
   | "approved"
@@ -57,11 +63,6 @@ export type ManualBowlingReviewStatus =
   | "pending_review"
   | "approved"
   | "rejected";
-export type AiAnalysisStatus =
-  | "pending"
-  | "processing"
-  | "completed"
-  | "failed";
 
 export type AdminAuditAction =
   | "PLAYER_CREATED"
@@ -176,6 +177,19 @@ export interface Match {
   updated_at: string;
   started_at: string | null;
   completed_at: string | null;
+}
+
+export interface MatchAiAnalysisRow {
+  id: string;
+  match_id: string;
+  status: AiAnalysisStatus;
+  player_of_match_id: string | null;
+  generated_analysis: Record<string, unknown> | null;
+  model_version: string | null;
+  error_message: string | null;
+  generated_at: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Delivery {
@@ -426,6 +440,21 @@ export interface Database {
           new_data?: Record<string, unknown> | null;
           metadata?: Record<string, unknown>;
           created_at?: string;
+        }
+      >;
+      match_ai_analysis: TableDef<
+        MatchAiAnalysisRow,
+        {
+          id?: string;
+          match_id: string;
+          status?: AiAnalysisStatus;
+          player_of_match_id?: string | null;
+          generated_analysis?: Record<string, unknown> | null;
+          model_version?: string | null;
+          error_message?: string | null;
+          generated_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
         }
       >;
     };

@@ -1,3 +1,4 @@
+import type { MatchAiAnalysisView } from "@/lib/ai/match-analysis-types";
 import type { PlayerOfMatchDisplay } from "@/lib/scorecard/player-of-match-display";
 import type { BattingSide, InningsStatus, MatchStatus } from "@/lib/database/types";
 
@@ -115,4 +116,5 @@ export interface FullMatchScorecardData {
   document: ScorecardDocumentData;
   innings: ScorecardInningsBuilt[];
   playerOfTheMatch: PlayerOfMatchDisplay;
+  aiAnalysis?: MatchAiAnalysisView;
 }

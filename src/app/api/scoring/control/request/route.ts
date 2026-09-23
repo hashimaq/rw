@@ -6,6 +6,7 @@ import {
 } from "@/lib/audit/record-scoring-control";
 import { requireActiveScorerSession } from "@/lib/auth/scoring-session";
 import { findActiveControllerSession } from "@/lib/scoring/control";
+import { notifyScoringControlChange } from "@/lib/scoring/notify-scoring-control-change";
 import { createServiceRoleClient } from "@/lib/supabase/admin";
 
 const bodySchema = z.object({
@@ -74,6 +75,8 @@ export async function POST(request: Request) {
         initiator: "scorer_session",
       },
     });
+
+    notifyScoringControlChange(body.match_id, "transfer_requested");
 
     return NextResponse.json({
       transfer_id: transfer.id,

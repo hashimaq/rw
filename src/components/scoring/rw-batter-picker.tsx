@@ -112,6 +112,27 @@ export function RwBatterPickSheet({
     return options.filter((p) => p.name.toLowerCase().includes(q));
   }, [options, search]);
 
+  if (options.length === 0 && mode === "list") {
+    return (
+      <div className="rounded-2xl border border-[var(--rw-primary)]/40 bg-red-500/[0.04] p-4 shadow-sm">
+        <p className="font-semibold">{title}</p>
+        {subtitle ? (
+          <p className="mt-1 text-xs text-[var(--rw-muted)]">{subtitle}</p>
+        ) : null}
+        <p className="mt-3 text-sm text-[var(--rw-muted)]">
+          No available players in the squad list. Add an unlisted player below.
+        </p>
+        <button
+          type="button"
+          className="rw-focus-ring mt-3 w-full rounded-xl border border-dashed border-[var(--rw-border)] px-3 py-2.5 text-left text-sm font-semibold"
+          onClick={() => setMode("other")}
+        >
+          Other — unlisted player
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-2xl border border-[var(--rw-primary)]/40 bg-red-500/[0.04] p-4 shadow-sm">
       <p className="font-semibold">{title}</p>
@@ -130,7 +151,13 @@ export function RwBatterPickSheet({
               aria-label="Search players"
             />
           ) : null}
-          <ul className="mt-3 max-h-64 space-y-1 overflow-y-auto overscroll-contain">
+          <ul className="mt-3 max-h-64 space-y-1 overflow-y-auto overscroll-y-contain">
+          {filtered.length === 0 ? (
+            <li className="rounded-xl border border-dashed border-[var(--rw-border)] px-3 py-4 text-center text-sm text-[var(--rw-muted)]">
+              No players match your search. Try &quot;Other — unlisted player&quot;
+              below.
+            </li>
+          ) : null}
           {filtered.map((p) => {
             const disabled = disabledKeys?.has(participantKey(p.id, p.name));
             return (

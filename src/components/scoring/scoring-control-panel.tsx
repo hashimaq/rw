@@ -2,171 +2,65 @@
 
 import Link from "next/link";
 import { useCallback, useState } from "react";
-import type { ScoringSessionStatusState } from "@/lib/scoring/use-scoring-session-status";
+import { ScoringControlRequestStatus } from "@/components/scoring/scoring-control-request-status";
+import type { ScoringSessionStatusHook } from "@/lib/scoring/use-scoring-session-status";
 import { cn } from "@/lib/utils/cn";
 
 interface ScoringControlPanelProps {
   slug: string;
-  matchId: string;
-  status: ScoringSessionStatusState;
-  onRefresh: () => Promise<void>;
+  session: ScoringSessionStatusHook;
   className?: string;
+  /** On enter-pin page, hide redundant "Enter as scorer" CTA. */
+  context?: "enter-pin" | "score";
+  onError?: (message: string) => void;
 }
 
 export function ScoringControlPanel({
   slug,
-  matchId,
-  status,
-  onRefresh,
+  session,
   className,
+  context = "score",
+  onError,
 }: ScoringControlPanelProps) {
-  const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [confirmTransfer, setConfirmTransfer] = useState(false);
+  const [requestError, setRequestError] = useState<string | null>(null);
 
   const requestControl = useCallback(async () => {
-    setBusy("request");
-    setError(null);
-    try {
-      const res = await fetch("/api/scoring/control/request", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ match_id: matchId }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setError(body.error ?? "Could not request control.");
-        return;
-      }
-      await onRefresh();
-    } finally {
-      setBusy(null);
+    setRequestError(null);
+    const result = await session.requestScoringControl();
+    if (!result.ok) {
+      const msg = result.error ?? "Could not request control.";
+      setRequestError(msg);
+      onError?.(msg);
     }
-  }, [matchId, onRefresh]);
+  }, [session, onError]);
 
-  const respondTransfer = useCallback(
-    async (action: "keep" | "transfer") => {
-      const transferId = status.pending_transfer?.id;
-      if (!transferId) return;
-      setBusy(action);
-      setError(null);
-      try {
-        const res = await fetch("/api/scoring/control/respond", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({
-            match_id: matchId,
-            transfer_id: transferId,
-            action,
-          }),
-        });
-        const body = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          setError(body.error ?? "Could not update transfer.");
-          return;
-        }
-        setConfirmTransfer(false);
-        await onRefresh();
-      } finally {
-        setBusy(null);
-      }
-    },
-    [matchId, onRefresh, status.pending_transfer?.id],
-  );
+  const cancelRequest = useCallback(async () => {
+    await session.cancelScoringControlRequest();
+  }, [session]);
 
-  if (status.loading) return null;
+  if (session.loading) return null;
 
-  if (status.scoring_role === "controller") {
-    return (
-      <div className={cn("space-y-3", className)}>
-        <div className="rounded-2xl border border-emerald-500/35 bg-emerald-500/10 px-4 py-3">
-          <p className="text-sm font-semibold text-[var(--rw-text)]">
-            Scoring control active
-          </p>
-          <p className="mt-1 text-xs text-[var(--rw-muted)]">
-            This device is the only one allowed to submit scoring updates.
-          </p>
-        </div>
-
-        {status.pending_transfer?.direction === "incoming" ? (
-          <div
-            className="rounded-2xl border border-amber-500/40 bg-amber-500/10 px-4 py-4"
-            role="alert"
-          >
-            <p className="text-sm font-semibold">Scoring control requested</p>
-            <p className="mt-1 text-xs text-[var(--rw-muted)]">
-              Another authorized device wants to take over scoring.
-            </p>
-            {confirmTransfer ? (
-              <div className="mt-4 space-y-2">
-                <p className="text-xs text-[var(--rw-muted)]">
-                  Transfer scoring control? The other device will become the only
-                  device allowed to submit scoring updates.
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    disabled={busy !== null}
-                    onClick={() => void respondTransfer("transfer")}
-                    className="rw-focus-ring min-h-10 rounded-full bg-[var(--rw-primary)] px-4 text-sm font-semibold text-white disabled:opacity-50"
-                  >
-                    {busy === "transfer" ? "Transferring…" : "Transfer control"}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy !== null}
-                    onClick={() => setConfirmTransfer(false)}
-                    className="rw-focus-ring min-h-10 rounded-full border border-[var(--rw-border)] px-4 text-sm font-medium"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="mt-4 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  disabled={busy !== null}
-                  onClick={() => void respondTransfer("keep")}
-                  className="rw-focus-ring min-h-10 rounded-full border border-[var(--rw-border)] px-4 text-sm font-medium disabled:opacity-50"
-                >
-                  {busy === "keep" ? "…" : "Keep control"}
-                </button>
-                <button
-                  type="button"
-                  disabled={busy !== null}
-                  onClick={() => setConfirmTransfer(true)}
-                  className="rw-focus-ring min-h-10 rounded-full border border-[var(--rw-border)] px-4 text-sm font-medium disabled:opacity-50"
-                >
-                  Transfer control
-                </button>
-              </div>
-            )}
-          </div>
-        ) : (
-          <p className="text-xs text-[var(--rw-muted)]">
-            To transfer scoring, another authorized device must request control. You
-            can approve the request here when it arrives.
-          </p>
-        )}
-
-        {error ? (
-          <p className="text-sm text-red-600" role="alert">
-            {error}
-          </p>
-        ) : null}
-      </div>
-    );
-  }
-
-  if (status.scoring_role === "viewer") {
+  if (session.scoring_role === "viewer") {
     const pendingOutgoing =
-      status.pending_transfer?.direction === "outgoing";
+      session.pending_transfer?.direction === "outgoing" ||
+      session.requesterUiPhase === "waiting";
+
+    const uiPhase =
+      session.requesterUiPhase !== "idle"
+        ? session.requesterUiPhase
+        : pendingOutgoing
+          ? "waiting"
+          : "idle";
 
     return (
       <div className={cn("space-y-3", className)}>
+        <ScoringControlRequestStatus
+          phase={uiPhase}
+          onCancelRequest={
+            uiPhase === "waiting" ? () => void cancelRequest() : undefined
+          }
+        />
+
         <div className="rounded-2xl border border-[var(--rw-border)] bg-[var(--rw-surface)] px-4 py-4">
           <p className="text-sm font-semibold">
             Scoring controlled by another device
@@ -184,28 +78,24 @@ export function ScoringControlPanel({
             </Link>
             <button
               type="button"
-              disabled={busy !== null || pendingOutgoing}
+              disabled={uiPhase === "waiting"}
               onClick={() => void requestControl()}
               className="rw-focus-ring min-h-10 flex-1 rounded-full bg-[var(--rw-primary)] text-sm font-semibold text-white disabled:opacity-50"
             >
-              {pendingOutgoing
-                ? "Request pending…"
-                : busy === "request"
-                  ? "Requesting…"
-                  : "Request scoring control"}
+              Request Scoring Controls
             </button>
           </div>
         </div>
-        {error ? (
+        {requestError ? (
           <p className="text-sm text-red-600" role="alert">
-            {error}
+            {requestError}
           </p>
         ) : null}
       </div>
     );
   }
 
-  if (status.has_active_controller) {
+  if (session.has_active_controller && context !== "enter-pin") {
     return (
       <div
         className={cn(
@@ -215,7 +105,7 @@ export function ScoringControlPanel({
       >
         <p className="text-sm font-semibold">Scoring in progress on another device</p>
         <p className="mt-1 text-xs text-[var(--rw-muted)]">
-          Enter the scorer PIN to watch live or request control.
+          Enter the scorer PIN to watch live or request control from another device.
         </p>
         <Link
           href={`/live/${slug}/enter-pin`}

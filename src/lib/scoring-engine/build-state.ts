@@ -6,6 +6,16 @@ import type {
 } from "./types";
 import { formatBattingDismissal } from "@/lib/scorecard/format-dismissal";
 import {
+  assertDeliveryRunInvariant,
+  deliveryRunComponents,
+} from "./delivery-run-components";
+import { decodeNoBallRunKind } from "./no-ball-run-kind";
+import { isCreaseCorrectionDelivery } from "@/lib/scoring/scoring-meta-delivery";
+import {
+  deliveryRunsForStrikeChange,
+  isDeadBallDelivery,
+} from "./strike-change";
+import {
   oversFromLegalBalls,
   participantKey,
   requiredRunRate,
@@ -153,50 +163,57 @@ function applyExtrasBreakdown(
   breakdown: ExtrasBreakdown,
   delivery: DeliveryInput,
 ) {
-  switch (delivery.extraType) {
-    case "wide":
-      breakdown.wides += delivery.extrasRuns;
-      break;
-    case "no_ball":
-      breakdown.noBalls += delivery.extrasRuns;
-      break;
-    case "bye":
-      breakdown.byes += delivery.extrasRuns;
-      break;
-    case "leg_bye":
-      breakdown.legByes += delivery.extrasRuns;
-      break;
-    case "penalty":
-      breakdown.penalty += delivery.extrasRuns;
-      break;
-    default:
-      break;
-  }
+  const c = deliveryRunComponents(delivery);
+  breakdown.wides += c.wideRuns;
+  breakdown.noBalls += c.noBallRuns;
+  breakdown.byes += c.byeRuns;
+  breakdown.legByes += c.legByeRuns;
+  breakdown.penalty += c.penaltyRuns;
 }
 
-function strikeRotationRuns(delivery: DeliveryInput): number {
-  if (delivery.isLegalDelivery) {
-    if (
-      delivery.extraType === "bye" ||
-      delivery.extraType === "leg_bye"
-    ) {
-      return delivery.totalRuns;
-    }
-    return delivery.batterRuns;
+function applyCreaseCorrectionToState(
+  state: InningsScoreState,
+  delivery: DeliveryInput,
+): InningsScoreState {
+  const next = structuredClone(state);
+  const strikerKey = participantKey(
+    delivery.strikerPlayerId,
+    delivery.strikerName,
+  );
+  const nonStrikerKey = participantKey(
+    delivery.nonStrikerPlayerId,
+    delivery.nonStrikerName,
+  );
+  ensureBatter(next, delivery.strikerPlayerId, delivery.strikerName);
+  ensureBatter(next, delivery.nonStrikerPlayerId, delivery.nonStrikerName);
+  const s = next.batters[strikerKey];
+  const ns = next.batters[nonStrikerKey];
+  if (!s || !ns || s.isOut || ns.isOut) {
+    throw new Error("Crease correction requires two active batters");
   }
-  if (
-    delivery.extraType === "wide" ||
-    delivery.extraType === "no_ball"
-  ) {
-    return delivery.totalRuns;
-  }
-  return 0;
+  next.strikerKey = strikerKey;
+  next.nonStrikerKey = nonStrikerKey;
+  ensureBowler(next, delivery.bowlerPlayerId, delivery.bowlerName);
+  next.currentBowlerKey = participantKey(
+    delivery.bowlerPlayerId,
+    delivery.bowlerName,
+  );
+  next.deliveries = [...next.deliveries, delivery];
+  return next;
 }
 
 export function applyDeliveryToState(
   state: InningsScoreState,
   delivery: DeliveryInput,
 ): InningsScoreState {
+  if (isCreaseCorrectionDelivery(delivery)) {
+    return applyCreaseCorrectionToState(state, delivery);
+  }
+
+  if (!isDeadBallDelivery(delivery)) {
+    assertDeliveryRunInvariant(delivery);
+  }
+
   const next = structuredClone(state);
 
   const strikerKey = participantKey(
@@ -224,17 +241,19 @@ export function applyDeliveryToState(
     startPartnership(next, strikerKey, nonStrikerKey);
   }
 
-  const isDeadBall =
-    delivery.notes === "dead_ball" ||
-    (delivery.totalRuns === 0 &&
-      !delivery.isLegalDelivery &&
-      delivery.extraType === "none" &&
-      !delivery.isWicket);
+  const isDeadBall = isDeadBallDelivery(delivery);
 
   if (!isDeadBall) {
+    const components = deliveryRunComponents(delivery);
     next.totalRuns += delivery.totalRuns;
-    if (delivery.extrasRuns > 0) {
-      next.extras += delivery.extrasRuns;
+    const extrasFromDelivery =
+      components.noBallRuns +
+      components.wideRuns +
+      components.byeRuns +
+      components.legByeRuns +
+      components.penaltyRuns;
+    if (extrasFromDelivery > 0) {
+      next.extras += extrasFromDelivery;
       applyExtrasBreakdown(next.extrasBreakdown, delivery);
     }
   }
@@ -251,6 +270,13 @@ export function applyDeliveryToState(
     if (next.activePartnership) {
       next.activePartnership.balls += 1;
     }
+  } else if (
+    !isDeadBall &&
+    delivery.extraType === "no_ball" &&
+    decodeNoBallRunKind(delivery) === "bat"
+  ) {
+    /** Illegal delivery, but striker played the ball — counts as a ball faced. */
+    striker.balls += 1;
   }
 
   if (!isDeadBall) {
@@ -326,7 +352,7 @@ export function applyDeliveryToState(
   }
 
   if (!isDeadBall) {
-    rotateStrike(next, strikeRotationRuns(delivery));
+    rotateStrike(next, deliveryRunsForStrikeChange(delivery));
   }
 
   if (delivery.isLegalDelivery && next.legalBalls % 6 === 0) {
@@ -424,7 +450,10 @@ export function liveSummary(state: InningsScoreState) {
 
   const currentOverNumber = Math.floor(state.legalBalls / 6);
   const ballsInCurrentOver = state.deliveries.filter(
-    (d) => d.overNumber === currentOverNumber,
+    (d) =>
+      d.overNumber === currentOverNumber &&
+      !isCreaseCorrectionDelivery(d) &&
+      d.notes !== "dead_ball",
   );
 
   return {

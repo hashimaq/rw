@@ -13,6 +13,7 @@ import {
 } from "@/lib/scoring-engine/utils";
 import type { InningsRow, Match } from "@/lib/database/types";
 import { groupDeliveriesByOver } from "@/lib/scorecard/group-deliveries-by-over";
+import { isScoringMetaDelivery } from "@/lib/scoring/scoring-meta-delivery";
 import { buildScorecardBattingFigures } from "@/lib/scorecard/scorecard-batting-xi";
 import { bowlingOrder } from "@/lib/scorecard/innings-player-order";
 import { formatMatchTossSummary } from "@/lib/scorecard/toss-summary";
@@ -53,14 +54,17 @@ function formatFowOver(overNumber: number, ballNumber: number): string {
 }
 
 function buildOverByOver(deliveries: DeliveryInput[]): ScorecardOverSummary[] {
-  return groupDeliveriesByOver(deliveries).map(([overNumber, balls]) => ({
+  const scoring = deliveries.filter((d) => !isScoringMetaDelivery(d));
+  return groupDeliveriesByOver(scoring).map(([overNumber, balls]) => ({
     overNumber,
     displayOverNumber: overNumber + 1,
     runs: balls.reduce((sum, d) => sum + d.totalRuns, 0),
-    balls: balls.map((d) => ({
-      clientEventId: d.clientEventId,
-      label: formatDeliveryLabel(d),
-    })),
+    balls: balls
+      .map((d) => ({
+        clientEventId: d.clientEventId,
+        label: formatDeliveryLabel(d),
+      }))
+      .filter((b) => b.label.length > 0),
   }));
 }
 

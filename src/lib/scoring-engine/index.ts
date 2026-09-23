@@ -3,5 +3,7 @@ export * from "./utils";
 export * from "./build-state";
 export * from "./delivery-builders";
 export * from "./format-ball";
+export * from "./strike-change";
+export * from "./delivery-run-components";
 export * from "./delivery-chip-style";
 export * from "./innings-live";

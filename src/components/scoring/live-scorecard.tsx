@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { formatDeliveryLabel } from "@/lib/scoring-engine/format-ball";
 import {
   deliveryChipClassName,
@@ -11,6 +12,7 @@ import {
 } from "@/lib/scoring-engine/innings-live";
 import type { DeliveryInput, InningsScoreState } from "@/lib/scoring-engine/types";
 import type { CreaseDisplayBatter } from "@/lib/scoring/crease-sync";
+import type { ParticipantRef } from "@/lib/scoring/participant";
 import { economy, strikeRate } from "@/lib/scoring-engine/utils";
 import { groupDeliveriesByOver } from "@/lib/scorecard/group-deliveries-by-over";
 import {
@@ -64,8 +66,10 @@ export interface LiveScorecardProps {
   /** Before first delivery — crease refs until engine keys exist. */
   pendingStriker?: { name: string } | null;
   pendingNonStriker?: { name: string } | null;
-  canSwapInitialStrike?: boolean;
-  onSwapInitialStrike?: () => void;
+  pendingStrikerRef?: ParticipantRef | null;
+  pendingNonStrikerRef?: ParticipantRef | null;
+  canSelectManualStriker?: boolean;
+  onSelectManualStriker?: (batter: ParticipantRef) => void;
 }
 
 export function MatchCentreTabs({
@@ -122,7 +126,6 @@ export function LiveScorecard(props: LiveScorecardProps) {
       {props.target != null ? (
         <ChaseStrip {...props} crrDisplay={crr} />
       ) : null}
-      <PartnershipLine partnership={props.partnership} />
       <BatterBowlerTables {...props} />
       {!props.inningsComplete ? (
         <CurrentOverStrip
@@ -130,6 +133,7 @@ export function LiveScorecard(props: LiveScorecardProps) {
           legalBalls={props.legalBalls}
         />
       ) : null}
+      <PartnershipLine partnership={props.partnership} />
     </div>
   );
 }
@@ -392,8 +396,10 @@ function BatterBowlerTables({
   state,
   pendingStriker,
   pendingNonStriker,
-  canSwapInitialStrike,
-  onSwapInitialStrike,
+  pendingStrikerRef,
+  pendingNonStrikerRef,
+  canSelectManualStriker,
+  onSelectManualStriker,
 }: LiveScorecardProps) {
   const onStrikeKey = strikerKey;
   const offStrikeKey = nonStrikerKey;
@@ -412,41 +418,68 @@ function BatterBowlerTables({
         ? pendingCreaseRow(pendingNonStriker.name)
         : crease.nonStriker;
 
+  const batterEnds = [
+    {
+      batter: onStrikeBatter,
+      endKey: onStrikeKey,
+      pendingRef: pendingStrikerRef,
+      end: "striker_end" as const,
+    },
+    {
+      batter: offStrikeBatter,
+      endKey: offStrikeKey,
+      pendingRef: pendingNonStrikerRef,
+      end: "non_striker_end" as const,
+    },
+  ];
+
   return (
     <div className="space-y-3">
       <div>
-        <div className="mb-1 flex items-center justify-between">
-          <p className="text-[11px] font-semibold text-[var(--rw-text)]">
-            Batsman
-          </p>
-          {canSwapInitialStrike && onSwapInitialStrike ? (
-            <button
-              type="button"
-              className="rw-focus-ring text-[11px] font-semibold text-[var(--rw-primary)]"
-              onClick={onSwapInitialStrike}
-            >
-              Swap strike
-            </button>
-          ) : null}
-        </div>
+        <p className="mb-1 text-[11px] font-semibold text-[var(--rw-text)]">
+          Batsman
+        </p>
         <StatTable
           headers={["", "R", "B", "4s", "6s", "SR"]}
-          rows={[onStrikeBatter, offStrikeBatter].flatMap((batter, idx) => {
+          rows={batterEnds.flatMap(({ batter, endKey, pendingRef, end }) => {
             if (!batter) return [];
-            const onStrike = idx === 0;
-            const batterKey = onStrike ? onStrikeKey : offStrikeKey;
+            const onStrike =
+              endKey != null ? endKey === onStrikeKey : end === "striker_end";
+            const batterKey = endKey;
             const playerId =
               batterKey && state.batters[batterKey]
                 ? state.batters[batterKey].playerId
-                : null;
+                : pendingRef?.playerId ?? null;
+            const ref: ParticipantRef | null =
+              batterKey && state.batters[batterKey]
+                ? {
+                    playerId: state.batters[batterKey].playerId,
+                    name: state.batters[batterKey].name,
+                  }
+                : pendingRef ?? null;
             const isGuest = playerId != null && guestPlayerIds.has(playerId);
             const name = batter.pending ? "Select batter" : batter.name;
+            const nameCell = (
+              <span className="flex min-w-0 items-center gap-1 truncate">
+                {onStrike && !batter.pending ? (
+                  <StrikerBatIcon className="shrink-0" />
+                ) : (
+                  <span className="inline-block w-[14px] shrink-0" aria-hidden />
+                )}
+                <span className="truncate">
+                  {name}
+                  {isGuest && !batter.pending ? " (G)" : ""}
+                </span>
+              </span>
+            );
             return [
               {
-                key: batterKey ?? `${onStrike ? "s" : "ns"}-${name}`,
+                key:
+                  batterKey ??
+                  (onStrike ? "crease-striker-end" : "crease-non-striker-end"),
                 highlight: onStrike && !batter.pending,
                 cells: [
-                  `${name}${isGuest && !batter.pending ? " (G)" : ""}`,
+                  nameCell,
                   batter.pending ? "—" : String(batter.runs),
                   batter.pending ? "—" : String(batter.balls),
                   batter.pending ? "—" : String(batter.fours),
@@ -455,6 +488,15 @@ function BatterBowlerTables({
                     ? "—"
                     : strikeRate(batter.runs, batter.balls).toFixed(1),
                 ],
+                onActivate:
+                  canSelectManualStriker &&
+                  onSelectManualStriker &&
+                  ref &&
+                  !batter.pending &&
+                  !batter.isOut
+                    ? () => onSelectManualStriker(ref)
+                    : undefined,
+                activateLabel: ref ? `Make ${name} striker` : undefined,
               },
             ];
           })}
@@ -488,17 +530,34 @@ function BatterBowlerTables({
   );
 }
 
+function StrikerBatIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={cn("h-3.5 w-3.5 text-current", className)}
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden
+    >
+      <path d="M4 20 18.5 5.5a2.1 2.1 0 0 0 0-3 2.1 2.1 0 0 0-3 0L4 14v6Zm14-12 2-2 2 2-2 2-2-2Z" />
+    </svg>
+  );
+}
+
+type StatRow = {
+  key: string;
+  highlight: boolean;
+  cells: (string | ReactNode)[];
+  sub?: string | null;
+  onActivate?: () => void;
+  activateLabel?: string;
+};
+
 function StatTable({
   headers,
   rows,
 }: {
   headers: string[];
-  rows: {
-    key: string;
-    highlight: boolean;
-    cells: string[];
-    sub?: string | null;
-  }[];
+  rows: StatRow[];
 }) {
   return (
     <div className="overflow-hidden">
@@ -516,26 +575,27 @@ function StatTable({
         ))}
       </div>
       <ul className="space-y-1">
-        {rows.map((row) => (
-          <li key={row.key}>
-            <div
-              className={cn(
-                "grid items-center gap-x-1 rounded-md px-2 py-1.5 text-[13px] tabular-nums",
-                row.highlight
-                  ? "bg-[var(--rw-primary)] font-semibold text-white"
-                  : "text-[var(--rw-text)]",
-              )}
-              style={{
-                gridTemplateColumns:
-                  "minmax(0,1.6fr) repeat(5, minmax(1.6rem,1fr))",
-              }}
-            >
+        {rows.map((row) => {
+          const gridClass = cn(
+            "grid w-full items-center gap-x-1 rounded-md px-2 py-1.5 text-[13px] tabular-nums",
+            row.highlight
+              ? "bg-[var(--rw-primary)] font-semibold text-white"
+              : "text-[var(--rw-text)]",
+            row.onActivate &&
+              "rw-focus-ring cursor-pointer hover:bg-[var(--rw-surface-hover)] active:scale-[0.995]",
+          );
+          const gridStyle = {
+            gridTemplateColumns:
+              "minmax(0,1.6fr) repeat(5, minmax(1.6rem,1fr))",
+          };
+          const body = (
+            <>
               {row.cells.map((cell, i) => (
                 <span
                   key={`${row.key}-${i}`}
                   className={cn(
                     i === 0
-                      ? "truncate text-left font-medium"
+                      ? "min-w-0 truncate text-left font-medium"
                       : "text-right font-semibold",
                     !row.highlight && i === 0 && "font-semibold",
                   )}
@@ -543,12 +603,33 @@ function StatTable({
                   {cell}
                 </span>
               ))}
-            </div>
-            {row.sub ? (
-              <p className="px-2 text-[11px] text-[var(--rw-muted)]">{row.sub}</p>
-            ) : null}
-          </li>
-        ))}
+            </>
+          );
+          return (
+            <li key={row.key}>
+              {row.onActivate ? (
+                <button
+                  type="button"
+                  className={gridClass}
+                  style={gridStyle}
+                  onClick={row.onActivate}
+                  aria-label={row.activateLabel}
+                >
+                  {body}
+                </button>
+              ) : (
+                <div className={gridClass} style={gridStyle}>
+                  {body}
+                </div>
+              )}
+              {row.sub ? (
+                <p className="px-2 text-[11px] text-[var(--rw-muted)]">
+                  {row.sub}
+                </p>
+              ) : null}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

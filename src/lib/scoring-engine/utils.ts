@@ -2,7 +2,9 @@ export function participantKey(
   playerId: string | null,
   name: string,
 ): string {
-  return playerId ?? `name:${name.trim().toLowerCase()}`;
+  if (playerId) return `player:${playerId}`;
+  const normalized = name.trim().toLowerCase();
+  return `name:${normalized}`;
 }
 
 export function oversFromLegalBalls(legalBalls: number): string {

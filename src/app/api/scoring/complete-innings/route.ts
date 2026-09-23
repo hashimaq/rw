@@ -1,4 +1,7 @@
+import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { NextResponse } from "next/server";
+import { scheduleMatchAiAnalysis } from "@/lib/ai/run-match-ai-analysis";
 import { z } from "zod";
 import {
   requireScoringControllerSession,
@@ -11,7 +14,6 @@ import {
 } from "@/lib/scoring/finalize-match";
 import { persistMatchResultIfNeeded } from "@/lib/scoring/persist-match-result";
 import { resultSummaryFromPersistedMatch } from "@/lib/scoring/derive-match-result";
-import { clearScorerSessionCookie } from "@/lib/scoring/session-cookie";
 
 const bodySchema = z.object({
   innings_id: z.string().uuid(),
@@ -33,11 +35,41 @@ export async function POST(request: Request) {
       .eq("id", inningsId)
       .maybeSingle();
 
+    const { data: matchMeta } = await supabase
+      .from("matches")
+      .select("share_slug")
+      .eq("id", session.matchId)
+      .maybeSingle();
+
     if (inningsError || !innings) {
       return NextResponse.json({ error: "Innings not found" }, { status: 404 });
     }
     if (innings.match_id !== session.matchId) {
       return NextResponse.json({ error: "Match mismatch" }, { status: 403 });
+    }
+
+    if (total_runs > 0 || wickets > 0) {
+      const { count, error: deliveryCountError } = await supabase
+        .from("deliveries")
+        .select("id", { count: "exact", head: true })
+        .eq("innings_id", inningsId);
+
+      if (deliveryCountError) {
+        return NextResponse.json(
+          { error: deliveryCountError.message },
+          { status: 500 },
+        );
+      }
+      if ((count ?? 0) === 0) {
+        return NextResponse.json(
+          {
+            error:
+              "Cannot complete innings until ball-by-ball deliveries are synced to the server.",
+            code: "deliveries_not_synced",
+          },
+          { status: 409 },
+        );
+      }
     }
 
     const { error: updateError } = await supabase
@@ -95,8 +127,14 @@ export async function POST(request: Request) {
     };
 
     if (matchCompleted) {
-      const response = NextResponse.json(payload);
-      return clearScorerSessionCookie(response);
+      scheduleMatchAiAnalysis(innings.match_id);
+      after(() => {
+        scheduleMatchAiAnalysis(innings.match_id);
+      });
+    }
+
+    if (matchMeta?.share_slug) {
+      revalidatePath(`/match/${matchMeta.share_slug}`);
     }
 
     return NextResponse.json(payload);

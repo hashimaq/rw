@@ -1,12 +1,13 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database/types";
 
-/** Mark match completed and end active scoring sessions (no PIN — server authority). */
+/** Mark match completed. Scoring sessions stay active so pending Dexie deliveries can sync. */
 export async function finalizeMatchIfNeeded(
   supabase: SupabaseClient<Database>,
-  matchId: string,
-  sessionId: string | null,
+  _matchId: string,
+  _sessionId: string | null,
 ): Promise<{ completed: boolean }> {
+  const matchId = _matchId;
   const { data: match, error: matchError } = await supabase
     .from("matches")
     .select("id, status")
@@ -34,26 +35,6 @@ export async function finalizeMatchIfNeeded(
 
   if (updateError) {
     throw new Error("Could not finalize match");
-  }
-
-  if (sessionId) {
-    await supabase
-      .from("scoring_sessions")
-      .update({
-        status: "ended",
-        ended_at: now,
-      })
-      .eq("id", sessionId)
-      .eq("status", "active");
-  } else {
-    await supabase
-      .from("scoring_sessions")
-      .update({
-        status: "ended",
-        ended_at: now,
-      })
-      .eq("match_id", matchId)
-      .eq("status", "active");
   }
 
   return { completed: true };

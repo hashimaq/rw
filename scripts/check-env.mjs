@@ -16,6 +16,8 @@ for (const f of [".env.local", ".env"]) {
   console.log("has_url", Boolean(g("NEXT_PUBLIC_SUPABASE_URL")));
   console.log("has_anon", Boolean(g("NEXT_PUBLIC_SUPABASE_ANON_KEY")));
   console.log("has_service", Boolean(g("SUPABASE_SERVICE_ROLE_KEY")));
+  console.log("has_gemini", Boolean(g("GEMINI_API_KEY")));
+  console.log("match_ai_provider", g("MATCH_AI_PROVIDER") || "gemini");
   console.log("has_db_url", Boolean(g("DATABASE_URL") || g("SUPABASE_DB_URL")));
   const u = g("NEXT_PUBLIC_SUPABASE_URL");
   if (u) console.log("project_ref", new URL(u).hostname.split(".")[0]);

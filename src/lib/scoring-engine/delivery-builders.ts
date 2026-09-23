@@ -1,6 +1,19 @@
 import type { ExtraType, WicketType } from "@/lib/database/types";
+import {
+  isWicketTypeAllowedOnExtra,
+  wicketOnExtraRejectionMessage,
+} from "@/lib/scoring/wicket-legality";
 import type { DeliveryInput, InningsScoreState } from "./types";
+import { assertDeliveryRunInvariant } from "./delivery-run-components";
+import { encodeNoBallRunKindNote } from "./no-ball-run-kind";
 import { participantKey } from "./utils";
+
+function finalizeDelivery(d: DeliveryInput): DeliveryInput {
+  if (d.notes !== "dead_ball") {
+    assertDeliveryRunInvariant(d);
+  }
+  return d;
+}
 
 export interface ActiveParticipants {
   strikerPlayerId: string | null;
@@ -77,44 +90,61 @@ export function buildNormalRunDelivery(
   clientEventId: string,
   runs: number,
 ): DeliveryInput {
-  return baseDelivery(state, participants, clientEventId, true, {
-    batterRuns: runs,
-    totalRuns: runs,
-    isBoundary: runs === 4,
-    isSix: runs === 6,
-  });
+  return finalizeDelivery(
+    baseDelivery(state, participants, clientEventId, true, {
+      batterRuns: runs,
+      totalRuns: runs,
+      isBoundary: runs === 4,
+      isSix: runs === 6,
+    }),
+  );
 }
 
 export function buildWideDelivery(
   state: InningsScoreState,
   participants: ActiveParticipants,
   clientEventId: string,
-  additionalRuns = 0,
+  additionalWideRuns = 0,
 ): DeliveryInput {
-  const extrasRuns = 1 + additionalRuns;
-  return baseDelivery(state, participants, clientEventId, false, {
-    extraType: "wide",
-    extrasRuns,
-    totalRuns: extrasRuns,
-  });
+  /** Wide penalty (1) plus any runs completed on the delivery — all extras, 0 to batter. */
+  const extrasRuns = 1 + additionalWideRuns;
+  return finalizeDelivery(
+    baseDelivery(state, participants, clientEventId, false, {
+      extraType: "wide",
+      extrasRuns,
+      batterRuns: 0,
+      totalRuns: extrasRuns,
+    }),
+  );
 }
+
+export type NoBallRunKind = "bat" | "bye" | "leg_bye" | "none";
 
 export function buildNoBallDelivery(
   state: InningsScoreState,
   participants: ActiveParticipants,
   clientEventId: string,
-  batterRuns: number,
+  options: {
+    kind: NoBallRunKind;
+    additionalRuns?: number;
+  },
 ): DeliveryInput {
-  const extrasRuns = 1;
-  const totalRuns = extrasRuns + batterRuns;
-  return baseDelivery(state, participants, clientEventId, false, {
-    extraType: "no_ball",
-    extrasRuns,
-    batterRuns,
-    totalRuns,
-    isBoundary: batterRuns === 4,
-    isSix: batterRuns === 6,
-  });
+  const additional = options.additionalRuns ?? 0;
+  const batterRuns = options.kind === "bat" ? additional : 0;
+  const extrasRuns = 1 + (options.kind === "bat" ? 0 : additional);
+  const totalRuns = 1 + additional;
+  return finalizeDelivery(
+    baseDelivery(state, participants, clientEventId, false, {
+      extraType: "no_ball",
+      extrasRuns,
+      batterRuns,
+      totalRuns,
+      noBallRunKind: options.kind,
+      notes: encodeNoBallRunKindNote(options.kind),
+      isBoundary: batterRuns === 4,
+      isSix: batterRuns === 6,
+    }),
+  );
 }
 
 export function buildByeDelivery(
@@ -123,11 +153,13 @@ export function buildByeDelivery(
   clientEventId: string,
   runs: number,
 ): DeliveryInput {
-  return baseDelivery(state, participants, clientEventId, true, {
-    extraType: "bye",
-    extrasRuns: runs,
-    totalRuns: runs,
-  });
+  return finalizeDelivery(
+    baseDelivery(state, participants, clientEventId, true, {
+      extraType: "bye",
+      extrasRuns: runs,
+      totalRuns: runs,
+    }),
+  );
 }
 
 export function buildLegByeDelivery(
@@ -136,11 +168,13 @@ export function buildLegByeDelivery(
   clientEventId: string,
   runs: number,
 ): DeliveryInput {
-  return baseDelivery(state, participants, clientEventId, true, {
-    extraType: "leg_bye",
-    extrasRuns: runs,
-    totalRuns: runs,
-  });
+  return finalizeDelivery(
+    baseDelivery(state, participants, clientEventId, true, {
+      extraType: "leg_bye",
+      extrasRuns: runs,
+      totalRuns: runs,
+    }),
+  );
 }
 
 export function buildDeadBallDelivery(
@@ -150,6 +184,17 @@ export function buildDeadBallDelivery(
 ): DeliveryInput {
   return baseDelivery(state, participants, clientEventId, false, {
     notes: "dead_ball",
+  });
+}
+
+/** Manual scorer crease correction — replayable, no scoring side effects. */
+export function buildCreaseCorrectionDelivery(
+  state: InningsScoreState,
+  participants: ActiveParticipants,
+  clientEventId: string,
+): DeliveryInput {
+  return baseDelivery(state, participants, clientEventId, false, {
+    notes: "crease_correction",
   });
 }
 
@@ -165,6 +210,81 @@ export interface WicketDeliveryOptions {
   isLegalDelivery?: boolean;
 }
 
+export interface ExtraWicketOptions {
+  wicketType: WicketType;
+  dismissedPlayerId: string | null;
+  dismissedPlayerName: string;
+  fielderPlayerId?: string | null;
+  fielderName?: string | null;
+}
+
+function assertExtraWicket(wicketType: WicketType, extraType: ExtraType) {
+  if (!isWicketTypeAllowedOnExtra(wicketType, extraType)) {
+    throw new Error(wicketOnExtraRejectionMessage(wicketType, extraType));
+  }
+}
+
+/** No-ball + runs + wicket on the same delivery (engine; scorer UI records extras separately today). */
+export function buildNoBallWicketDelivery(
+  state: InningsScoreState,
+  participants: ActiveParticipants,
+  clientEventId: string,
+  options: {
+    kind: NoBallRunKind;
+    additionalRuns?: number;
+  } & ExtraWicketOptions,
+): DeliveryInput {
+  assertExtraWicket(options.wicketType, "no_ball");
+  const additional = options.additionalRuns ?? 0;
+  const batterRuns = options.kind === "bat" ? additional : 0;
+  const extrasRuns = 1 + (options.kind === "bat" ? 0 : additional);
+  const totalRuns = 1 + additional;
+  return finalizeDelivery(
+    baseDelivery(state, participants, clientEventId, false, {
+      extraType: "no_ball",
+      extrasRuns,
+      batterRuns,
+      totalRuns,
+      noBallRunKind: options.kind,
+      notes: encodeNoBallRunKindNote(options.kind),
+      isBoundary: batterRuns === 4,
+      isSix: batterRuns === 6,
+      isWicket: true,
+      wicketType: options.wicketType,
+      dismissedPlayerId: options.dismissedPlayerId,
+      dismissedPlayerName: options.dismissedPlayerName,
+      fielderPlayerId: options.fielderPlayerId ?? null,
+      fielderName: options.fielderName ?? null,
+    }),
+  );
+}
+
+/** Wide + completed runs + wicket on the same delivery. */
+export function buildWideWicketDelivery(
+  state: InningsScoreState,
+  participants: ActiveParticipants,
+  clientEventId: string,
+  additionalWideRuns: number,
+  options: ExtraWicketOptions,
+): DeliveryInput {
+  assertExtraWicket(options.wicketType, "wide");
+  const extrasRuns = 1 + additionalWideRuns;
+  return finalizeDelivery(
+    baseDelivery(state, participants, clientEventId, false, {
+      extraType: "wide",
+      extrasRuns,
+      batterRuns: 0,
+      totalRuns: extrasRuns,
+      isWicket: true,
+      wicketType: options.wicketType,
+      dismissedPlayerId: options.dismissedPlayerId,
+      dismissedPlayerName: options.dismissedPlayerName,
+      fielderPlayerId: options.fielderPlayerId ?? null,
+      fielderName: options.fielderName ?? null,
+    }),
+  );
+}
+
 export function buildWicketDelivery(
   state: InningsScoreState,
   participants: ActiveParticipants,
@@ -177,24 +297,30 @@ export function buildWicketDelivery(
   const isLegal = options.isLegalDelivery ?? true;
   const totalRuns = batterRuns + extrasRuns;
 
-  return baseDelivery(state, participants, clientEventId, isLegal, {
-    batterRuns,
-    extrasRuns,
-    extraType,
-    totalRuns,
-    isWicket: true,
-    wicketType: options.wicketType,
-    dismissedPlayerId: options.dismissedPlayerId,
-    dismissedPlayerName: options.dismissedPlayerName,
-    fielderPlayerId: options.fielderPlayerId ?? null,
-    fielderName: options.fielderName ?? null,
-    isBoundary: batterRuns === 4,
-    isSix: batterRuns === 6,
-  });
+  return finalizeDelivery(
+    baseDelivery(state, participants, clientEventId, isLegal, {
+      batterRuns,
+      extrasRuns,
+      extraType,
+      totalRuns,
+      isWicket: true,
+      wicketType: options.wicketType,
+      dismissedPlayerId: options.dismissedPlayerId,
+      dismissedPlayerName: options.dismissedPlayerName,
+      fielderPlayerId: options.fielderPlayerId ?? null,
+      fielderName: options.fielderName ?? null,
+      isBoundary: batterRuns === 4,
+      isSix: batterRuns === 6,
+    }),
+  );
 }
 
 export function needsBowlerChange(state: InningsScoreState): boolean {
-  return state.legalBalls > 0 && state.legalBalls % 6 === 0;
+  if (state.legalBalls === 0 || state.legalBalls % 6 !== 0) return false;
+  const lastOverBowlerKey = lastBowlerKey(state);
+  if (!lastOverBowlerKey) return false;
+  if (!state.currentBowlerKey) return true;
+  return state.currentBowlerKey === lastOverBowlerKey;
 }
 
 export function lastBowlerKey(state: InningsScoreState): string | null {

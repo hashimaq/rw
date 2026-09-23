@@ -16,6 +16,8 @@ interface InningsTransitionPanelProps {
   onSaveInnings: () => Promise<void>;
   onStartSecondInnings: () => Promise<void>;
   savePending?: boolean;
+  startSecondPending?: boolean;
+  startSecondError?: string | null;
 }
 
 export function InningsTransitionPanel({
@@ -28,6 +30,8 @@ export function InningsTransitionPanel({
   onSaveInnings,
   onStartSecondInnings,
   savePending = false,
+  startSecondPending = false,
+  startSecondError = null,
 }: InningsTransitionPanelProps) {
   const firstInnings = inningsNumber === 1;
   const overs = oversFromLegalBalls(state.legalBalls);
@@ -53,13 +57,21 @@ export function InningsTransitionPanel({
             View 1st Innings Scorecard
           </Link>
           {isController ? (
-            <button
-              type="button"
-              className="rw-focus-ring rw-btn-primary w-full min-h-11"
-              onClick={() => void onStartSecondInnings().catch(() => {})}
-            >
-              Start 2nd Innings
-            </button>
+            <div className="space-y-2">
+              <button
+                type="button"
+                className="rw-focus-ring rw-btn-primary w-full min-h-11"
+                disabled={startSecondPending}
+                onClick={() => void onStartSecondInnings().catch(() => {})}
+              >
+                {startSecondPending ? "Starting…" : "Start 2nd Innings"}
+              </button>
+              {startSecondError ? (
+                <p className="text-xs text-red-700 dark:text-red-300" role="alert">
+                  {startSecondError}
+                </p>
+              ) : null}
+            </div>
           ) : null}
         </div>
       </div>

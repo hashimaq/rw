@@ -164,7 +164,7 @@ describe("buildFullMatchScorecard", () => {
     const w = buildWideDelivery(s, P, uuid(10), 0);
     s = applyDeliveryToState(s, w);
     list.push(w);
-    const nb = buildNoBallDelivery(s, P, uuid(11), 0);
+    const nb = buildNoBallDelivery(s, P, uuid(11), { kind: "none" });
     list.push(nb);
 
     const innId = "inn-extras-0000-0000-0000-000000000001";

@@ -10,6 +10,7 @@ import {
 } from "react";
 import {
   isBrowserAppBypassAllowed,
+  isInstallFirstGateEnabled,
   isIosDevice,
   isRedWingsAppUnlocked,
   isStandaloneDisplayMode,
@@ -89,7 +90,10 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const appUnlocked = isRedWingsAppUnlocked(standalone, bypass);
+  const appUnlocked = isRedWingsAppUnlocked(
+    standalone,
+    !isInstallFirstGateEnabled() || bypass,
+  );
 
   const installPromptMode = useMemo(
     () =>

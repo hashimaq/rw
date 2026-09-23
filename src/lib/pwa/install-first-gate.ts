@@ -13,19 +13,24 @@ export function isIosDevice(): boolean {
 }
 
 /**
- * Local development only — production must remain install-first.
- * Set NEXT_PUBLIC_ALLOW_BROWSER_APP=1 to test in browser during development.
+ * Re-enable install-first gate at project end by setting
+ * NEXT_PUBLIC_PWA_INSTALL_GATE_ENABLED=1 in production env.
  */
+export function isInstallFirstGateEnabled(): boolean {
+  return process.env.NEXT_PUBLIC_PWA_INSTALL_GATE_ENABLED === "1";
+}
+
+/** Optional override for local production-build testing without installing. */
 export function isBrowserAppBypassAllowed(): boolean {
-  if (process.env.NODE_ENV === "development") return true;
   return process.env.NEXT_PUBLIC_ALLOW_BROWSER_APP === "1";
 }
 
-/** Normal Red Wings app UI is allowed only when installed or explicitly bypassed (dev). */
+/** Normal Red Wings app UI when gate is off, installed, or explicit bypass. */
 export function isRedWingsAppUnlocked(
   standalone: boolean,
   bypassAllowed: boolean = isBrowserAppBypassAllowed(),
 ): boolean {
+  if (!isInstallFirstGateEnabled()) return true;
   return standalone || bypassAllowed;
 }
 

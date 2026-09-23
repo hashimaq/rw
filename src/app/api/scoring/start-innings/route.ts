@@ -5,6 +5,7 @@ import {
   ScoringAuthorizationError,
 } from "@/lib/auth/scoring-session";
 import { createServiceRoleClient } from "@/lib/supabase/admin";
+import { planStartSecondInnings } from "@/lib/scoring/second-innings-transition";
 
 const bodySchema = z.object({
   match_id: z.string().uuid(),
@@ -32,39 +33,31 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Innings not found" }, { status: 404 });
     }
 
-    const current = inningsList[inningsList.length - 1];
-    if (current.innings_status !== "completed") {
-      return NextResponse.json(
-        { error: "Current innings is not complete yet" },
-        { status: 409 },
-      );
+    const plan = planStartSecondInnings(inningsList);
+    if (plan.kind === "error") {
+      return NextResponse.json({ error: plan.message }, { status: plan.status });
     }
-
-    if (inningsList.length >= 2) {
-      return NextResponse.json(
-        { error: "Second innings already exists" },
-        { status: 409 },
-      );
+    if (plan.kind === "existing") {
+      return NextResponse.json({
+        innings: plan.innings,
+        already_started: true,
+      });
     }
-
-    const target = current.total_runs + 1;
-    const battingTeam =
-      current.batting_team === "red_wings" ? "opponent" : "red_wings";
-    const bowlingTeam =
-      current.bowling_team === "red_wings" ? "opponent" : "red_wings";
 
     const { data: created, error: insertError } = await supabase
       .from("innings")
       .insert({
         match_id: matchId,
         innings_number: 2,
-        batting_team: battingTeam,
-        bowling_team: bowlingTeam,
-        overs_limit: current.overs_limit,
-        target,
+        batting_team: plan.battingTeam,
+        bowling_team: plan.bowlingTeam,
+        overs_limit: plan.oversLimit,
+        target: plan.target,
         innings_status: "not_started",
       })
-      .select("id, innings_number, batting_team, bowling_team, target, overs_limit, innings_status")
+      .select(
+        "id, innings_number, batting_team, bowling_team, target, overs_limit, innings_status",
+      )
       .single();
 
     if (insertError || !created) {
@@ -74,7 +67,7 @@ export async function POST(request: Request) {
       );
     }
 
-    return NextResponse.json({ innings: created });
+    return NextResponse.json({ innings: created, already_started: false });
   } catch (err) {
     if (err instanceof ScoringAuthorizationError) {
       return NextResponse.json({ error: err.message }, { status: 401 });

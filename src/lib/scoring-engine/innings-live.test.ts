@@ -97,7 +97,10 @@ describe("innings live rates and chase", () => {
 
   it("no-ball does not consume a legal ball", () => {
     let s = createEmptyInningsState(20, 143);
-    s = applyDeliveryToState(s, buildNoBallDelivery(s, P, uuid(1), 0));
+    s = applyDeliveryToState(
+      s,
+      buildNoBallDelivery(s, P, uuid(1), { kind: "none" }),
+    );
     expect(s.legalBalls).toBe(0);
     expect(chaseBallsRemaining(s)).toBe(120);
   });

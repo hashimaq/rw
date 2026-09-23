@@ -1,8 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { LiveBadge } from "@/components/ui/live-badge";
+import { OverlayPortal } from "@/components/ui/overlay-portal";
 import { StatusBadge } from "@/components/ui/status-badge";
 
 export interface DeleteMatchDialogProps {
@@ -46,6 +47,15 @@ export function DeleteMatchDialog({
   const [error, setError] = useState<string | null>(null);
 
   const isLive = status === "live";
+
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [open]);
 
   if (!open) return null;
 
@@ -119,20 +129,21 @@ export function DeleteMatchDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-end justify-center p-4 sm:items-center">
-      <button
-        type="button"
-        className="absolute inset-0 bg-black/45 backdrop-blur-[2px]"
-        aria-label="Close delete match dialog"
-        onClick={close}
-      />
-      <div
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="delete-match-title"
-        aria-describedby="delete-match-desc"
-        className="relative w-full max-w-md rounded-2xl border border-[var(--rw-border)] bg-[var(--rw-surface)] p-5 shadow-[var(--rw-shadow-lg)]"
-      >
+    <OverlayPortal>
+      <div className="fixed inset-0 z-[80] flex min-w-0 items-center justify-center p-4">
+        <button
+          type="button"
+          className="absolute inset-0 bg-black/45 backdrop-blur-[2px]"
+          aria-label="Close delete match dialog"
+          onClick={close}
+        />
+        <div
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="delete-match-title"
+          aria-describedby="delete-match-desc"
+          className="relative w-full min-w-0 max-w-md rounded-2xl border border-[var(--rw-border)] bg-[var(--rw-surface)] p-5 shadow-[var(--rw-shadow-lg)]"
+        >
         <h2 id="delete-match-title" className="text-lg font-semibold">
           Delete match?
         </h2>
@@ -181,7 +192,8 @@ export function DeleteMatchDialog({
             {loading ? "Deleting…" : "Delete Match"}
           </button>
         </div>
+        </div>
       </div>
-    </div>
+    </OverlayPortal>
   );
 }

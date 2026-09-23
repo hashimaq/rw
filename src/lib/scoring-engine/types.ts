@@ -14,6 +14,7 @@ export interface DeliveryInput {
   bowlerName: string;
   batterRuns: number;
   totalRuns: number;
+  /** Runs stored as extras on the delivery record (DB); use deliveryRunComponents() for attribution. */
   extrasRuns: number;
   extraType: ExtraType;
   isLegalDelivery: boolean;
@@ -26,8 +27,11 @@ export interface DeliveryInput {
   fielderPlayerId: string | null;
   fielderName: string | null;
   notes?: string | null;
+  /** Classifies non-bat runs on a no-ball (bat runs use batterRuns). */
+  noBallRunKind?: "bat" | "bye" | "leg_bye" | "none";
 }
 
+/** Extras runs by category (not delivery counts). */
 export interface ExtrasBreakdown {
   wides: number;
   noBalls: number;

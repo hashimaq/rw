@@ -1,7 +1,6 @@
 import type { InningsScoreState } from "@/lib/scoring-engine/types";
 import { participantKey } from "@/lib/scoring-engine/utils";
 import type { ParticipantRef } from "@/lib/scoring/participant";
-
 export function batterRefFromKey(
   state: InningsScoreState,
   key: string | null,
@@ -20,6 +19,36 @@ export function syncCreaseRefsFromEngineState(
     striker: batterRefFromKey(state, state.strikerKey),
     nonStriker: batterRefFromKey(state, state.nonStrikerKey),
   };
+}
+
+/**
+ * Crease for scorer actions (wickets, manual striker) — engine keys when set,
+ * otherwise hook refs before the first delivery is recorded.
+ */
+export function authoritativeCreaseRefs(
+  state: InningsScoreState,
+  pending: {
+    striker: ParticipantRef | null;
+    nonStriker: ParticipantRef | null;
+  },
+): { striker: ParticipantRef | null; nonStriker: ParticipantRef | null } {
+  const fromEngine = syncCreaseRefsFromEngineState(state);
+  if (fromEngine.striker && fromEngine.nonStriker) {
+    return fromEngine;
+  }
+  if (state.deliveries.length === 0 && pending.striker && pending.nonStriker) {
+    return {
+      striker: pending.striker,
+      nonStriker: pending.nonStriker,
+    };
+  }
+  if (pending.striker && pending.nonStriker) {
+    return {
+      striker: pending.striker ?? fromEngine.striker,
+      nonStriker: pending.nonStriker ?? fromEngine.nonStriker,
+    };
+  }
+  return fromEngine;
 }
 
 export type WicketReplacementSlot = "striker" | "non_striker" | null;

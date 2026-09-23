@@ -17,6 +17,7 @@ import {
   type ActiveParticipants,
 } from "@/lib/scoring-engine/delivery-builders";
 import { syncCreaseRefsFromEngineState } from "@/lib/scoring/crease-sync";
+import { participantKey } from "@/lib/scoring-engine/utils";
 
 const A = "11111111-1111-4111-8111-111111111111";
 const B = "22222222-2222-4222-8222-222222222222";
@@ -147,8 +148,8 @@ describe("strikerKey after strike rotation", () => {
       dismissedPlayerName: auto!.name,
     });
     s = applyDeliveryToState(s, w);
-    expect(s.batters[A]!.isOut).toBe(false);
-    expect(s.batters[B]!.isOut).toBe(true);
+    expect(s.batters[participantKey(A, "Ahmed")]!.isOut).toBe(false);
+    expect(s.batters[participantKey(B, "Bilal")]!.isOut).toBe(true);
   });
 });
 
@@ -163,6 +164,8 @@ describe("delivery rebuild preserves fielder", () => {
       fielderName: "Bilal",
     });
     s = applyDeliveryToState(s, w);
-    expect(s.batters[A]!.dismissalLabel).toContain("c Bilal");
+    expect(s.batters[participantKey(A, "Ahmed")]!.dismissalLabel).toContain(
+      "c Bilal",
+    );
   });
 });

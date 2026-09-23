@@ -1,11 +1,17 @@
 import type { Delivery } from "@/lib/database/types";
+import { decodeNoBallRunKind } from "@/lib/scoring-engine/no-ball-run-kind";
 import type { DeliveryInput } from "@/lib/scoring-engine/types";
 import type { DeliveryInputPayload } from "@/lib/validation/delivery";
+
+function enrichNoBallKind(input: DeliveryInput): DeliveryInput {
+  const kind = decodeNoBallRunKind(input);
+  return kind ? { ...input, noBallRunKind: kind } : input;
+}
 
 export function payloadToDeliveryInput(
   payload: DeliveryInputPayload,
 ): DeliveryInput {
-  return {
+  const base: DeliveryInput = {
     clientEventId: payload.client_event_id,
     sequenceInInnings: payload.sequence_in_innings,
     overNumber: payload.over_number,
@@ -31,10 +37,11 @@ export function payloadToDeliveryInput(
     fielderName: payload.fielder_name ?? null,
     notes: payload.notes ?? null,
   };
+  return enrichNoBallKind(base);
 }
 
 export function deliveryRowToInput(row: Delivery): DeliveryInput {
-  return {
+  const base: DeliveryInput = {
     clientEventId: row.client_event_id,
     sequenceInInnings: row.sequence_in_innings,
     overNumber: row.over_number,
@@ -60,6 +67,7 @@ export function deliveryRowToInput(row: Delivery): DeliveryInput {
     fielderName: row.fielder_name,
     notes: row.notes,
   };
+  return enrichNoBallKind(base);
 }
 
 export function deliveryInputToPayload(

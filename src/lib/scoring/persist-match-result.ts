@@ -79,9 +79,11 @@ export async function persistMatchResultIfNeeded(
     return {
       inningsNumber: row.innings_number,
       battingTeam: row.batting_team,
-      totalRuns: state.totalRuns,
-      wickets: state.wickets,
+      totalRuns: row.total_runs ?? state.totalRuns,
+      wickets: row.wickets ?? state.wickets,
       target: row.target,
+      inningsComplete: row.innings_status === "completed",
+      inningsStatus: row.innings_status,
     };
   });
 

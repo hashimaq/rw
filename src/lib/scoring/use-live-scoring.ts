@@ -1,26 +1,32 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type {
   ScoringBootstrap,
   SquadPlayerOption,
 } from "@/lib/data/scoring-bootstrap";
 import { deliveryInputToPayload, payloadToDeliveryInput } from "@/lib/mappers/delivery";
 import {
-  applyDeliveryToState,
   buildByeDelivery,
   buildDeadBallDelivery,
   buildInningsStateFromDeliveries,
   buildLegByeDelivery,
   buildNoBallDelivery,
+  type NoBallRunKind,
   buildNormalRunDelivery,
   buildWideDelivery,
+  buildCreaseCorrectionDelivery,
   buildWicketDelivery,
-  inningsIsComplete,
   lastBowlerKey,
   liveSummary,
-  needsBowlerChange,
   undoLastDelivery,
   type ActiveParticipants,
   type DeliveryInput,
@@ -30,6 +36,7 @@ import { getLocalDb } from "@/lib/local-db/schema";
 import {
   createApiDeliveryPusher,
   flushSyncQueue,
+  flushSyncQueueUntilIdle,
   recordDeliveryLocalFirst,
 } from "@/lib/sync/delivery-sync";
 import { createApiUndoPusher, undoDeliveryLocal } from "@/lib/sync/undo-delivery";
@@ -39,29 +46,65 @@ import {
   validateWicketConfirm,
 } from "@/lib/scoring/wicket-flow";
 
-export type ScoringPhase =
-  | "setup_openers"
-  | "setup_bowler"
-  | "need_bowler"
-  | "need_batter"
-  | "scoring"
-  | "innings_complete"
-  | "innings_saved"
-  | "match_complete";
-
 import type { ParticipantRef } from "@/lib/scoring/participant";
+import {
+  scoringUiSnapshotFromEngineState,
+  wicketReplacementSlotFromEngineState,
+  type ScoringPhase,
+} from "@/lib/scoring/scoring-phase";
+
+export type { ScoringPhase };
 export type { ParticipantRef } from "@/lib/scoring/participant";
 import {
+  authoritativeCreaseRefs,
   deriveCreaseDisplay,
   syncCreaseRefsFromEngineState,
-  wicketReplacementSlotFromDelivery,
 } from "@/lib/scoring/crease-sync";
 import { opponentBatterNamesFromDeliveries } from "@/lib/scoring/opponent-batters";
-import { opponentBowlerNamesFromDeliveries } from "@/lib/scoring/opponent-bowlers";
+import {
+  createOpponentBowler,
+  createOpponentParticipant,
+  opponentParticipantsFromDeliveries,
+} from "@/lib/scoring/opponent-participant";
+import {
+  opponentBowlerNamesFromDeliveries,
+  opponentBowlersFromDeliveries,
+} from "@/lib/scoring/opponent-bowlers";
+import {
+  buildInningsResultInputs,
+  deriveMatchResult,
+} from "@/lib/scoring/derive-match-result";
 import { participantKey } from "@/lib/scoring-engine/utils";
 
+import { validateConsecutiveOverBowler } from "@/lib/scoring/bowler-consecutive-overs";
 import { mergeDeliveries } from "@/lib/scoring/merge-deliveries";
 import { saveScoringBootstrapCache } from "@/lib/local-db/scoring-bootstrap-cache";
+import {
+  emptySecondInningsState,
+  secondInningsInfoFromApi,
+  secondInningsScoringSnapshot,
+  serverDeliveriesForHydration,
+  type StartSecondInningsApiInnings,
+} from "@/lib/scoring/second-innings-transition";
+import {
+  activeParticipantsForNextDelivery,
+} from "@/lib/scoring/participants-from-state";
+import {
+  commitInningsDeliveryUpdate,
+  type InningsDeliveryBuilder,
+} from "@/lib/scoring/commit-innings-delivery";
+import { isCreaseCorrectionDelivery } from "@/lib/scoring/scoring-meta-delivery";
+import { useInningsDeliveriesRealtime } from "@/lib/scoring/use-innings-deliveries-realtime";
+
+function activeCreaseHooks(
+  state: InningsScoreState,
+  striker: ParticipantRef | null,
+  nonStriker: ParticipantRef | null,
+): { striker: ParticipantRef; nonStriker: ParticipantRef } | null {
+  const c = authoritativeCreaseRefs(state, { striker, nonStriker });
+  if (!c.striker || !c.nonStriker) return null;
+  return { striker: c.striker, nonStriker: c.nonStriker };
+}
 
 function participantsFromRefs(
   striker: ParticipantRef,
@@ -76,16 +119,6 @@ function participantsFromRefs(
     bowlerPlayerId: bowler.playerId,
     bowlerName: bowler.name,
   };
-}
-
-function activeBattersCount(state: InningsScoreState): number {
-  const keys = new Set([state.strikerKey, state.nonStrikerKey].filter(Boolean));
-  let count = 0;
-  for (const key of keys) {
-    const b = key ? state.batters[key] : null;
-    if (b && !b.isOut) count += 1;
-  }
-  return count;
 }
 
 export function useLiveScoring(
@@ -114,13 +147,15 @@ export function useLiveScoring(
   const [bowler, setBowler] = useState<ParticipantRef | null>(null);
   const [phase, setPhase] = useState<ScoringPhase>("setup_openers");
   const [opponentBatters, setOpponentBatters] = useState<ParticipantRef[]>([]);
-  const [wicketReplacementSlot, setWicketReplacementSlot] = useState<
-    "striker" | "non_striker" | null
-  >(null);
   const [syncPending, setSyncPending] = useState(0);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [isOnline, setIsOnline] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [startSecondInningsPending, setStartSecondInningsPending] =
+    useState(false);
+  const [startSecondInningsError, setStartSecondInningsError] = useState<
+    string | null
+  >(null);
   const [matchGuestBatters, setMatchGuestBatters] = useState<SquadPlayerOption[]>(
     () =>
       bootstrap.redWingsSquad.filter(
@@ -130,10 +165,32 @@ export function useLiveScoring(
   const [hydrated, setHydrated] = useState(false);
   const inningsStartedRef = useRef(false);
   const stateRef = useRef(state);
-  stateRef.current = state;
+  useLayoutEffect(() => {
+    const refLen = stateRef.current.deliveries.length;
+    const stateLen = state.deliveries.length;
+    if (stateLen > refLen) {
+      stateRef.current = state;
+    } else if (stateLen === refLen && state !== stateRef.current) {
+      stateRef.current = state;
+    }
+  }, [state]);
   const [matchCompleted, setMatchCompleted] = useState(false);
   const [resultSummary, setResultSummary] = useState<string | null>(
     bootstrap.resultSummary,
+  );
+
+  const applyLocalMatchResult = useCallback(
+    (liveState: InningsScoreState, inningsIdToComplete: string) => {
+      const inputs = buildInningsResultInputs(inningsList, {
+        activeInningsId: inningsIdToComplete,
+        liveTotalRuns: liveState.totalRuns,
+        liveWickets: liveState.wickets,
+        liveInningsComplete: true,
+      });
+      const derived = deriveMatchResult(inputs, bootstrap.opponentName);
+      if (derived) setResultSummary(derived.resultSummary);
+    },
+    [inningsList, bootstrap.opponentName],
   );
 
   const postCompleteInnings = useCallback(
@@ -154,7 +211,16 @@ export function useLiveScoring(
         }),
       });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) return;
+      if (!res.ok) {
+        if (body.code === "deliveries_not_synced") {
+          setSyncError(
+            typeof body.error === "string"
+              ? body.error
+              : "Deliveries must sync before completing innings.",
+          );
+        }
+        return;
+      }
 
       setInningsList((prev) =>
         prev.map((i) =>
@@ -238,10 +304,62 @@ export function useLiveScoring(
     [state.deliveries],
   );
 
+  const opponentBowlerOptions = useMemo(
+    () => opponentBowlersFromDeliveries(state.deliveries),
+    [state.deliveries],
+  );
+
   const opponentBatterSuggestions = useMemo(
     () => opponentBatterNamesFromDeliveries(state.deliveries, state),
     [state],
   );
+
+  const phaseContext = useMemo(
+    () => ({
+      inningsNumber: activeInnings.inningsNumber,
+      inningsStatus: activeInnings.inningsStatus,
+    }),
+    [activeInnings.inningsNumber, activeInnings.inningsStatus],
+  );
+
+  const wicketReplacementSlot = useMemo(
+    () =>
+      phase === "need_batter"
+        ? wicketReplacementSlotFromEngineState(state)
+        : null,
+    [state, phase],
+  );
+
+  const applyUiFromEngine = useCallback(
+    (engineState: InningsScoreState) => {
+      const snap = scoringUiSnapshotFromEngineState(engineState, phaseContext);
+      setStriker(snap.striker);
+      setNonStriker(snap.nonStriker);
+      if (snap.bowler) setBowler(snap.bowler);
+      if (snap.phase === "match_complete") setMatchCompleted(true);
+      setPhase(snap.phase);
+    },
+    [phaseContext],
+  );
+
+  const handleRemoteInningsRebuild = useCallback(
+    (next: InningsScoreState) => {
+      setState(next);
+      applyUiFromEngine(next);
+    },
+    [applyUiFromEngine],
+  );
+
+  useInningsDeliveriesRealtime({
+    matchId: bootstrap.matchId,
+    inningsId,
+    enabled: hydrated,
+    hydrated,
+    oversLimit: activeInnings.oversLimit,
+    target: activeInnings.target,
+    stateRef,
+    onRebuilt: handleRemoteInningsRebuild,
+  });
 
   const creaseDisplay = useMemo(
     () =>
@@ -273,7 +391,9 @@ export function useLiveScoring(
     if (!isController || !navigator.onLine) return;
     setIsSyncing(true);
     try {
-      await flushSyncQueue(await createApiDeliveryPusher());
+      await flushSyncQueue(await createApiDeliveryPusher(), {
+        matchId: bootstrap.matchId,
+      });
       setSyncError(null);
     } catch (err) {
       setSyncError(err instanceof Error ? err.message : "Sync failed");
@@ -281,7 +401,41 @@ export function useLiveScoring(
       setIsSyncing(false);
     }
     await refreshSyncStats();
-  }, [isController, refreshSyncStats]);
+  }, [bootstrap.matchId, isController, refreshSyncStats]);
+
+  const completeInningsAfterSync = useCallback(
+    async (
+      inningsIdToComplete: string,
+      totalRuns: number,
+      wickets: number,
+      inningsNumber: number,
+    ) => {
+      if (!isController) return;
+      setIsSyncing(true);
+      try {
+        const flush = await flushSyncQueueUntilIdle(
+          await createApiDeliveryPusher(),
+          { matchId: bootstrap.matchId },
+        );
+        if (!flush.ok) {
+          setSyncError(
+            `${flush.pending} delivery update(s) still need to sync. Stay online and try again.`,
+          );
+          return;
+        }
+        await postCompleteInnings(
+          inningsIdToComplete,
+          totalRuns,
+          wickets,
+          inningsNumber,
+        );
+      } finally {
+        setIsSyncing(false);
+        await refreshSyncStats();
+      }
+    },
+    [bootstrap.matchId, isController, postCompleteInnings, refreshSyncStats],
+  );
 
   useEffect(() => {
     const syncOnline = () => setIsOnline(navigator.onLine);
@@ -311,7 +465,11 @@ export function useLiveScoring(
           .filter((r) => r.innings_id === inningsId)
           .toArray();
         const localInputs = localRows.map((r) => payloadToDeliveryInput(r));
-        const merged = mergeDeliveries(bootstrap.deliveries, localInputs);
+        const serverDeliveries = serverDeliveriesForHydration(
+          bootstrap,
+          inningsId,
+        );
+        const merged = mergeDeliveries(serverDeliveries, localInputs);
         const rebuilt = buildInningsStateFromDeliveries(
           merged,
           activeInnings.oversLimit,
@@ -319,45 +477,18 @@ export function useLiveScoring(
         );
         if (cancelled) return;
         setState(rebuilt);
+        stateRef.current = rebuilt;
 
         if (activeInnings.battingTeam === "opponent") {
           const names = opponentBatterNamesFromDeliveries(
             rebuilt.deliveries,
             rebuilt,
           );
-          setOpponentBatters(names.map((name) => ({ playerId: null, name })));
+          setOpponentBatters(opponentParticipantsFromDeliveries(rebuilt.deliveries));
         }
 
         if (rebuilt.deliveries.length > 0) {
-          const last = rebuilt.deliveries[rebuilt.deliveries.length - 1];
-          setStriker({
-            playerId: last.strikerPlayerId,
-            name: last.strikerName,
-          });
-          setNonStriker({
-            playerId: last.nonStrikerPlayerId,
-            name: last.nonStrikerName,
-          });
-          setBowler({
-            playerId: last.bowlerPlayerId,
-            name: last.bowlerName,
-          });
-          if (inningsIsComplete(rebuilt)) {
-            if (activeInnings.inningsNumber >= 2) {
-              setMatchCompleted(true);
-              setPhase("match_complete");
-            } else if (activeInnings.inningsStatus === "completed") {
-              setPhase("innings_saved");
-            } else {
-              setPhase("innings_complete");
-            }
-          } else if (needsBowlerChange(rebuilt)) {
-            setPhase("need_bowler");
-          } else if (activeBattersCount(rebuilt) < 2 && rebuilt.wickets < 10) {
-            setPhase("need_batter");
-          } else {
-            setPhase("scoring");
-          }
+          applyUiFromEngine(rebuilt);
           inningsStartedRef.current = true;
         } else {
           setPhase("setup_openers");
@@ -376,11 +507,14 @@ export function useLiveScoring(
     inningsId,
     activeInnings.oversLimit,
     activeInnings.target,
+    activeInnings.inningsNumber,
+    activeInnings.inningsStatus,
+    applyUiFromEngine,
     refreshSyncStats,
   ]);
 
   useEffect(() => {
-    if (!isController) return;
+    if (!isController || bootstrap.status === "completed") return;
     void runFlush();
     const id = window.setInterval(() => void runFlush(), 4000);
     const onOnline = () => void runFlush();
@@ -389,171 +523,233 @@ export function useLiveScoring(
       window.clearInterval(id);
       window.removeEventListener("online", onOnline);
     };
-  }, [isController, runFlush]);
+  }, [isController, runFlush, bootstrap.status]);
 
-  const commitDelivery = useCallback(
-    async (delivery: DeliveryInput) => {
-      if (!isController || !striker || !nonStriker || !bowler) return;
-
-      setState((prev) => {
-        const next = applyDeliveryToState(prev, delivery);
-        const crease = syncCreaseRefsFromEngineState(next);
-        if (
-          delivery.isWicket &&
-          activeBattersCount(next) < 2 &&
-          next.wickets < 10
-        ) {
-          setWicketReplacementSlot(
-            wicketReplacementSlotFromDelivery(
-              next,
-              delivery.dismissedPlayerId,
-              delivery.dismissedPlayerName,
-            ),
-          );
-          if (crease.striker) setStriker(crease.striker);
-          if (crease.nonStriker) setNonStriker(crease.nonStriker);
-          setPhase("need_batter");
-        } else {
-          setWicketReplacementSlot(null);
-          if (crease.striker) setStriker(crease.striker);
-          if (crease.nonStriker) setNonStriker(crease.nonStriker);
-          if (inningsIsComplete(next)) {
-            if (activeInnings.inningsNumber >= 2) {
-              void postCompleteInnings(
-                inningsId,
-                next.totalRuns,
-                next.wickets,
-                activeInnings.inningsNumber,
-              );
-            } else {
-              setPhase("innings_complete");
-            }
-          } else if (needsBowlerChange(next)) {
-            setPhase("need_bowler");
-          } else {
-            setPhase("scoring");
-          }
+  const persistDeliveryInBackground = useCallback(
+    (delivery: DeliveryInput) => {
+      void (async () => {
+        try {
+          const payload = deliveryInputToPayload(inningsId, delivery);
+          await recordDeliveryLocalFirst(bootstrap.matchId, payload);
+        } catch {
+          /* local queue / retry */
         }
-        return next;
-      });
+        void refreshSyncStats();
+        void runFlush();
+        if (
+          !inningsStartedRef.current &&
+          !isCreaseCorrectionDelivery(delivery)
+        ) {
+          inningsStartedRef.current = true;
+          void fetch("/api/scoring/begin-innings", {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ innings_id: inningsId }),
+          });
+        }
+      })();
+    },
+    [inningsId, bootstrap.matchId, refreshSyncStats, runFlush],
+  );
 
-      const payload = deliveryInputToPayload(inningsId, delivery);
-      await recordDeliveryLocalFirst(bootstrap.matchId, payload);
-      await refreshSyncStats();
-      void runFlush();
+  /** Meta / crease / bowler selection — sync engine update, background persist. */
+  const commitParticipantsMeta = useCallback(
+    (buildDelivery: InningsDeliveryBuilder): boolean => {
+      if (!isController) return false;
 
-      if (!inningsStartedRef.current) {
-        inningsStartedRef.current = true;
-        void fetch("/api/scoring/begin-innings", {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ innings_id: inningsId }),
-        });
+      const clientEventId = crypto.randomUUID();
+      const base = stateRef.current;
+      const result = commitInningsDeliveryUpdate(
+        base,
+        base,
+        clientEventId,
+        buildDelivery,
+        (b, delivery) =>
+          !validateConsecutiveOverBowler(
+            b,
+            delivery.bowlerPlayerId,
+            delivery.bowlerName,
+          ),
+      );
+
+      if (!result.delivery || result.skippedDuplicate) return false;
+
+      stateRef.current = result.next;
+      setState(result.next);
+
+      const snap = scoringUiSnapshotFromEngineState(result.next, phaseContext);
+      setStriker(snap.striker);
+      setNonStriker(snap.nonStriker);
+      if (snap.bowler) setBowler(snap.bowler);
+      setPhase(snap.phase);
+
+      persistDeliveryInBackground(result.delivery);
+      return true;
+    },
+    [isController, phaseContext, persistDeliveryInBackground],
+  );
+
+  /** Apply delivery to local engine state immediately; persistence runs in background. */
+  const commitDelivery = useCallback(
+    (buildDelivery: InningsDeliveryBuilder): boolean => {
+      if (!isController || !bowler) return false;
+
+      const clientEventId = crypto.randomUUID();
+      const base = stateRef.current;
+      const result = commitInningsDeliveryUpdate(
+        base,
+        base,
+        clientEventId,
+        buildDelivery,
+        (b, delivery) =>
+          !validateConsecutiveOverBowler(
+            b,
+            delivery.bowlerPlayerId,
+            delivery.bowlerName,
+          ),
+      );
+
+      stateRef.current = result.next;
+      setState(result.next);
+
+      if (!result.delivery) return false;
+
+      if (!result.skippedDuplicate) {
+        const snap = scoringUiSnapshotFromEngineState(result.next, phaseContext);
+        setStriker(snap.striker);
+        setNonStriker(snap.nonStriker);
+        if (snap.bowler) setBowler(snap.bowler);
+        if (snap.phase === "match_complete") {
+          setMatchCompleted(true);
+          if (activeInnings.inningsNumber >= 2) {
+            applyLocalMatchResult(result.next, inningsId);
+          }
+          void completeInningsAfterSync(
+            inningsId,
+            result.next.totalRuns,
+            result.next.wickets,
+            activeInnings.inningsNumber,
+          );
+        }
+        setPhase(snap.phase);
       }
+
+      persistDeliveryInBackground(result.delivery);
+      return true;
     },
     [
       isController,
-      striker,
-      nonStriker,
       bowler,
       inningsId,
-      bootstrap.matchId,
       activeInnings.inningsNumber,
-      refreshSyncStats,
-      runFlush,
-      postCompleteInnings,
+      phaseContext,
+      persistDeliveryInBackground,
+      completeInningsAfterSync,
+      applyLocalMatchResult,
     ],
   );
 
   const recordRun = useCallback(
-    async (runs: number) => {
-      if (phase !== "scoring" || !striker || !nonStriker || !bowler) return;
-      const id = crypto.randomUUID();
-      const delivery = buildNormalRunDelivery(
-        stateRef.current,
-        participantsFromRefs(striker, nonStriker, bowler),
-        id,
-        runs,
-      );
-      await commitDelivery(delivery);
+    (runs: number) => {
+      if (phase !== "scoring" || !bowler) return;
+      const crease = activeCreaseHooks(stateRef.current, striker, nonStriker);
+      if (!crease) return;
+      commitDelivery((base, clientEventId) => {
+        const P = activeParticipantsForNextDelivery(base, bowler, crease);
+        if (!P) return null;
+        return buildNormalRunDelivery(base, P, clientEventId, runs);
+      });
     },
     [phase, striker, nonStriker, bowler, commitDelivery],
   );
 
   const recordWide = useCallback(
-    async (additional = 0) => {
-      if (phase !== "scoring" || !striker || !nonStriker || !bowler) return;
-      const id = crypto.randomUUID();
-      const delivery = buildWideDelivery(
-        stateRef.current,
-        participantsFromRefs(striker, nonStriker, bowler),
-        id,
-        additional,
-      );
-      await commitDelivery(delivery);
+    (additional = 0) => {
+      if (phase !== "scoring" || !bowler) return;
+      const crease = activeCreaseHooks(stateRef.current, striker, nonStriker);
+      if (!crease) return;
+      commitDelivery((base, clientEventId) => {
+        const P = activeParticipantsForNextDelivery(base, bowler, crease);
+        if (!P) return null;
+        return buildWideDelivery(base, P, clientEventId, additional);
+      });
     },
     [phase, striker, nonStriker, bowler, commitDelivery],
   );
 
   const recordNoBall = useCallback(
-    async (batterRuns: number) => {
-      if (phase !== "scoring" || !striker || !nonStriker || !bowler) return;
-      const id = crypto.randomUUID();
-      const delivery = buildNoBallDelivery(
-        stateRef.current,
-        participantsFromRefs(striker, nonStriker, bowler),
-        id,
-        batterRuns,
-      );
-      await commitDelivery(delivery);
+    (kind: NoBallRunKind, additionalRuns = 0) => {
+      if (phase !== "scoring" || !bowler) return;
+      const crease = activeCreaseHooks(stateRef.current, striker, nonStriker);
+      if (!crease) return;
+      commitDelivery((base, clientEventId) => {
+        const P = activeParticipantsForNextDelivery(base, bowler, crease);
+        if (!P) return null;
+        return buildNoBallDelivery(base, P, clientEventId, {
+          kind,
+          additionalRuns,
+        });
+      });
     },
     [phase, striker, nonStriker, bowler, commitDelivery],
   );
 
   const recordBye = useCallback(
-    async (runs: number) => {
-      if (phase !== "scoring" || !striker || !nonStriker || !bowler) return;
-      const id = crypto.randomUUID();
-      const delivery = buildByeDelivery(
-        stateRef.current,
-        participantsFromRefs(striker, nonStriker, bowler),
-        id,
-        runs,
-      );
-      await commitDelivery(delivery);
+    (runs: number) => {
+      if (phase !== "scoring" || !bowler) return;
+      const crease = activeCreaseHooks(stateRef.current, striker, nonStriker);
+      if (!crease) return;
+      commitDelivery((base, clientEventId) => {
+        const P = activeParticipantsForNextDelivery(base, bowler, crease);
+        if (!P) return null;
+        return buildByeDelivery(base, P, clientEventId, runs);
+      });
     },
     [phase, striker, nonStriker, bowler, commitDelivery],
   );
 
   const recordLegBye = useCallback(
-    async (runs: number) => {
-      if (phase !== "scoring" || !striker || !nonStriker || !bowler) return;
-      const id = crypto.randomUUID();
-      const delivery = buildLegByeDelivery(
-        stateRef.current,
-        participantsFromRefs(striker, nonStriker, bowler),
-        id,
-        runs,
-      );
-      await commitDelivery(delivery);
+    (runs: number) => {
+      if (phase !== "scoring" || !bowler) return;
+      const crease = activeCreaseHooks(stateRef.current, striker, nonStriker);
+      if (!crease) return;
+      commitDelivery((base, clientEventId) => {
+        const P = activeParticipantsForNextDelivery(base, bowler, crease);
+        if (!P) return null;
+        return buildLegByeDelivery(base, P, clientEventId, runs);
+      });
     },
     [phase, striker, nonStriker, bowler, commitDelivery],
   );
 
-  const recordDeadBall = useCallback(async () => {
-    if (phase !== "scoring" || !striker || !nonStriker || !bowler) return;
-    const id = crypto.randomUUID();
-    const delivery = buildDeadBallDelivery(
-      stateRef.current,
-      participantsFromRefs(striker, nonStriker, bowler),
-      id,
-    );
-    await commitDelivery(delivery);
+  const recordDeadBall = useCallback(() => {
+    if (phase !== "scoring" || !bowler) return;
+    const crease = activeCreaseHooks(stateRef.current, striker, nonStriker);
+    if (!crease) return;
+    commitDelivery((base, clientEventId) => {
+      const P = activeParticipantsForNextDelivery(base, bowler, crease);
+      if (!P) return null;
+      return buildDeadBallDelivery(base, P, clientEventId);
+    });
   }, [phase, striker, nonStriker, bowler, commitDelivery]);
 
+  const commitCreaseCorrection = useCallback(
+    (strikerRef: ParticipantRef, nonStrikerRef: ParticipantRef) => {
+      if (!bowler || !isController) return false;
+      return commitDelivery((base, clientEventId) =>
+        buildCreaseCorrectionDelivery(
+          base,
+          participantsFromRefs(strikerRef, nonStrikerRef, bowler),
+          clientEventId,
+        ),
+      );
+    },
+    [bowler, isController, commitDelivery],
+  );
+
   const recordWicket = useCallback(
-    async (options: {
+    (options: {
       wicketType: WicketType;
       dismissed: ParticipantRef;
       fielder?: ParticipantRef | null;
@@ -561,7 +757,10 @@ export function useLiveScoring(
     }) => {
       if (!bowler) return;
       if (phase !== "scoring" && phase !== "need_batter") return;
-      const crease = syncCreaseRefsFromEngineState(stateRef.current);
+      const crease = authoritativeCreaseRefs(stateRef.current, {
+        striker,
+        nonStriker,
+      });
       if (!crease.striker || !crease.nonStriker) return;
       const dismissed = resolveWicketDismissed(
         options.wicketType,
@@ -573,73 +772,99 @@ export function useLiveScoring(
       const confirmPayload = { ...options, dismissed };
       const validation = validateWicketConfirm(confirmPayload);
       if (validation) return;
-      const id = crypto.randomUUID();
-      const delivery = buildWicketDelivery(
-        stateRef.current,
-        participantsFromRefs(crease.striker, crease.nonStriker, bowler),
-        id,
-        {
-          wicketType: options.wicketType,
-          dismissedPlayerId: dismissed.playerId,
-          dismissedPlayerName: dismissed.name,
-          fielderPlayerId: options.fielder?.playerId ?? null,
-          fielderName: options.fielder?.name ?? null,
-          batterRuns: options.batterRuns ?? 0,
-        },
-      );
-      await commitDelivery(delivery);
+      commitDelivery((base, clientEventId) => {
+        const liveCrease = authoritativeCreaseRefs(base, {
+          striker,
+          nonStriker,
+        });
+        if (!liveCrease.striker || !liveCrease.nonStriker) return null;
+        return buildWicketDelivery(
+          base,
+          participantsFromRefs(liveCrease.striker, liveCrease.nonStriker, bowler),
+          clientEventId,
+          {
+            wicketType: options.wicketType,
+            dismissedPlayerId: dismissed.playerId,
+            dismissedPlayerName: dismissed.name,
+            fielderPlayerId: options.fielder?.playerId ?? null,
+            fielderName: options.fielder?.name ?? null,
+            batterRuns: options.batterRuns ?? 0,
+          },
+        );
+      });
     },
-    [bowler, phase, commitDelivery],
+    [bowler, phase, commitDelivery, striker, nonStriker],
   );
 
-  const undo = useCallback(async () => {
-    if (!isController || state.deliveries.length === 0) return;
-    const last = state.deliveries[state.deliveries.length - 1];
-    const next = undoLastDelivery(state);
-    if (!next) return;
-    setState(next);
-    await undoDeliveryLocal(last.clientEventId);
-    try {
-      const push = await createApiUndoPusher();
-      await push(last.clientEventId);
-    } catch {
-      /* local undo still applied; sync may retry */
-    }
-    await refreshSyncStats();
-    void runFlush();
+  const setManualStriker = useCallback(
+    (picked: ParticipantRef): string | null => {
+      if (!isController || !bowler) return null;
+      if (phase !== "scoring") return null;
+      const crease = authoritativeCreaseRefs(stateRef.current, {
+        striker,
+        nonStriker,
+      });
+      if (!crease.striker || !crease.nonStriker) return null;
 
-    const crease = syncCreaseRefsFromEngineState(next);
-    if (crease.striker) setStriker(crease.striker);
-    if (crease.nonStriker) setNonStriker(crease.nonStriker);
-    const lastD = next.deliveries[next.deliveries.length - 1];
-    if (lastD) {
-      setBowler({ playerId: lastD.bowlerPlayerId, name: lastD.bowlerName });
-    }
-    setWicketReplacementSlot(null);
-    if (inningsIsComplete(next)) {
-      if (activeInnings.inningsNumber >= 2) {
-        setMatchCompleted(true);
-        setPhase("match_complete");
-      } else {
-        setPhase("innings_complete");
+      const pickedKey = participantKey(picked.playerId, picked.name);
+      const strikerKey = participantKey(
+        crease.striker.playerId,
+        crease.striker.name,
+      );
+      const nonStrikerKey = participantKey(
+        crease.nonStriker.playerId,
+        crease.nonStriker.name,
+      );
+      if (pickedKey === strikerKey) return null;
+      if (pickedKey !== nonStrikerKey) return null;
+
+      const newStriker = picked;
+      const newNonStriker = crease.striker;
+
+      setStriker(newStriker);
+      setNonStriker(newNonStriker);
+
+      if (stateRef.current.deliveries.length === 0) {
+        return `${newStriker.name} is now striker`;
       }
-    } else if (needsBowlerChange(next)) setPhase("need_bowler");
-    else if (activeBattersCount(next) < 2 && next.wickets < 10) {
-      setPhase("need_batter");
-    } else setPhase("scoring");
-  }, [isController, state, activeInnings.inningsNumber, refreshSyncStats, runFlush]);
 
-  const canSwapInitialStrike = useMemo(
-    () => state.deliveries.length === 0 && Boolean(striker && nonStriker),
-    [state.deliveries.length, striker, nonStriker],
+      commitCreaseCorrection(newStriker, newNonStriker);
+      return `${newStriker.name} is now striker`;
+    },
+    [isController, bowler, phase, striker, nonStriker, commitCreaseCorrection],
   );
 
-  const swapInitialStrike = useCallback(() => {
-    if (stateRef.current.deliveries.length > 0) return;
-    if (!striker || !nonStriker) return;
-    setStriker(nonStriker);
-    setNonStriker(striker);
-  }, [nonStriker, striker]);
+  const undo = useCallback(() => {
+    const current = stateRef.current;
+    if (!isController || current.deliveries.length === 0) return;
+    const last = current.deliveries[current.deliveries.length - 1];
+    const next = undoLastDelivery(current);
+    if (!next) return;
+    stateRef.current = next;
+    setState(next);
+    applyUiFromEngine(next);
+
+    void (async () => {
+      await undoDeliveryLocal(last.clientEventId);
+      try {
+        const push = await createApiUndoPusher();
+        await push(last.clientEventId);
+      } catch {
+        /* local undo still applied */
+      }
+      void refreshSyncStats();
+      void runFlush();
+    })();
+  }, [isController, applyUiFromEngine, refreshSyncStats, runFlush]);
+
+  const canSelectManualStriker = useMemo(() => {
+    if (!isController || phase !== "scoring") return false;
+    const crease = authoritativeCreaseRefs(state, {
+      striker,
+      nonStriker,
+    });
+    return Boolean(crease.striker && crease.nonStriker);
+  }, [isController, phase, state, striker, nonStriker]);
 
   const confirmOpeners = useCallback(
     (s: ParticipantRef, ns: ParticipantRef, b: ParticipantRef) => {
@@ -651,17 +876,66 @@ export function useLiveScoring(
     [],
   );
 
-  const confirmBowler = useCallback((b: ParticipantRef) => {
-    setBowler(b);
-    setPhase("scoring");
-  }, []);
+  const confirmBowler = useCallback(
+    (b: ParticipantRef) => {
+      const err = validateConsecutiveOverBowler(
+        stateRef.current,
+        b.playerId,
+        b.name,
+      );
+      if (err) return;
 
-  const confirmOpponentBowler = useCallback((name: string) => {
-    const trimmed = name.trim();
-    if (!trimmed) return;
-    setBowler({ playerId: null, name: trimmed });
-    setPhase("scoring");
-  }, []);
+      setBowler(b);
+      setPhase("scoring");
+
+      const crease = authoritativeCreaseRefs(stateRef.current, {
+        striker,
+        nonStriker,
+      });
+      const sRef = crease.striker;
+      const nsRef = crease.nonStriker;
+      if (!sRef || !nsRef) return;
+
+      commitParticipantsMeta((base, clientEventId) =>
+        buildCreaseCorrectionDelivery(
+          base,
+          participantsFromRefs(sRef, nsRef, b),
+          clientEventId,
+        ),
+      );
+    },
+    [commitParticipantsMeta, striker, nonStriker],
+  );
+
+  const confirmOpponentBowler = useCallback(
+    (name: string) => {
+      const trimmed = name.trim();
+      if (!trimmed) return;
+      const err = validateConsecutiveOverBowler(stateRef.current, null, trimmed);
+      if (err) return;
+      const bowlerRef = createOpponentBowler(trimmed);
+
+      setBowler(bowlerRef);
+      setPhase("scoring");
+
+      const crease = authoritativeCreaseRefs(stateRef.current, {
+        striker,
+        nonStriker,
+      });
+      const sRef = crease.striker;
+      const nsRef = crease.nonStriker;
+      if (!sRef || !nsRef) return;
+
+      commitParticipantsMeta((base, clientEventId) =>
+        buildCreaseCorrectionDelivery(
+          base,
+          participantsFromRefs(sRef, nsRef, bowlerRef),
+          clientEventId,
+        ),
+      );
+    },
+    [commitParticipantsMeta, striker, nonStriker],
+  );
 
   const confirmOpponentBatter = useCallback(
     (name: string) => {
@@ -671,35 +945,51 @@ export function useLiveScoring(
         if (prev.some((p) => p.name.toLowerCase() === trimmed.toLowerCase())) {
           return prev;
         }
-        return [...prev, { playerId: null, name: trimmed }];
+        return [...prev, createOpponentParticipant(trimmed)];
       });
-      const batter: ParticipantRef = { playerId: null, name: trimmed };
-      if (wicketReplacementSlot === "striker") setStriker(batter);
-      else if (wicketReplacementSlot === "non_striker") setNonStriker(batter);
-      else if (striker && nonStriker) {
-        const sk = participantKey(striker.playerId, striker.name);
-        if (state.batters[sk]?.isOut) setStriker(batter);
-        else setNonStriker(batter);
+      const batter = createOpponentParticipant(trimmed);
+      const slot = wicketReplacementSlotFromEngineState(stateRef.current);
+      const engine = syncCreaseRefsFromEngineState(stateRef.current);
+      if (slot === "striker") {
+        const ns = engine.nonStriker ?? nonStriker;
+        if (!ns) return;
+        setStriker(batter);
+        setNonStriker(ns);
+        setPhase("scoring");
+        commitCreaseCorrection(batter, ns);
+      } else if (slot === "non_striker") {
+        const s = engine.striker ?? striker;
+        if (!s) return;
+        setStriker(s);
+        setNonStriker(batter);
+        setPhase("scoring");
+        commitCreaseCorrection(s, batter);
       }
-      setWicketReplacementSlot(null);
-      setPhase("scoring");
     },
-    [wicketReplacementSlot, striker, nonStriker, state.batters],
+    [commitCreaseCorrection, nonStriker, striker],
   );
 
   const confirmNewBatter = useCallback(
     (batter: ParticipantRef) => {
-      if (wicketReplacementSlot === "striker") setStriker(batter);
-      else if (wicketReplacementSlot === "non_striker") setNonStriker(batter);
-      else if (striker && nonStriker) {
-        const sk = participantKey(striker.playerId, striker.name);
-        if (state.batters[sk]?.isOut) setStriker(batter);
-        else setNonStriker(batter);
+      const slot = wicketReplacementSlotFromEngineState(stateRef.current);
+      const engine = syncCreaseRefsFromEngineState(stateRef.current);
+      if (slot === "striker") {
+        const ns = engine.nonStriker ?? nonStriker;
+        if (!ns) return;
+        setStriker(batter);
+        setNonStriker(ns);
+        setPhase("scoring");
+        commitCreaseCorrection(batter, ns);
+      } else if (slot === "non_striker") {
+        const s = engine.striker ?? striker;
+        if (!s) return;
+        setStriker(s);
+        setNonStriker(batter);
+        setPhase("scoring");
+        commitCreaseCorrection(s, batter);
       }
-      setWicketReplacementSlot(null);
-      setPhase("scoring");
     },
-    [wicketReplacementSlot, striker, nonStriker, state.batters],
+    [commitCreaseCorrection, nonStriker, striker],
   );
 
   const createMatchGuestPlayer = useCallback(async (fullName: string) => {
@@ -737,64 +1027,94 @@ export function useLiveScoring(
       if (prev.some((p) => p.name.toLowerCase() === trimmed.toLowerCase())) {
         return prev;
       }
-      return [...prev, { playerId: null, name: trimmed }];
+      return [...prev, createOpponentParticipant(trimmed)];
     });
   }, []);
 
   const saveInnings = useCallback(async () => {
     const s = stateRef.current;
-    await postCompleteInnings(
+    await completeInningsAfterSync(
       inningsId,
       s.totalRuns,
       s.wickets,
       activeInnings.inningsNumber,
     );
   }, [
-    postCompleteInnings,
+    completeInningsAfterSync,
     inningsId,
     activeInnings.inningsNumber,
   ]);
 
+  const applySecondInningsActivated = useCallback(
+    (inn: StartSecondInningsApiInnings, previousActive: typeof activeInnings) => {
+      const nextInnings = secondInningsInfoFromApi(inn, previousActive);
+      const empty = emptySecondInningsState(inn.overs_limit, inn.target);
+      const snap = secondInningsScoringSnapshot(empty, 2, nextInnings.inningsStatus);
+
+      setInningsList((prev) => {
+        const nextList = prev.some((i) => i.id === nextInnings.id)
+          ? prev.map((i) => (i.id === nextInnings.id ? nextInnings : i))
+          : [...prev, nextInnings];
+        void saveScoringBootstrapCache({
+          ...bootstrap,
+          activeInningsId: nextInnings.id,
+          deliveries: [],
+          innings: nextList,
+        }).catch(() => {
+          /* cache optional */
+        });
+        return nextList;
+      });
+      setInningsId(nextInnings.id);
+      stateRef.current = empty;
+      setState(empty);
+      setStriker(snap.striker);
+      setNonStriker(snap.nonStriker);
+      setBowler(snap.bowler);
+      setPhase(snap.phase);
+      setOpponentBatters([]);
+      setStartSecondInningsError(null);
+      inningsStartedRef.current = false;
+      setMatchCompleted(false);
+    },
+    [bootstrap],
+  );
+
   const startSecondInnings = useCallback(async () => {
-    const res = await fetch("/api/scoring/start-innings", {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ match_id: bootstrap.matchId }),
-    });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(body.error ?? "Could not start innings 2");
+    if (startSecondInningsPending) return;
+    if (activeInnings.inningsNumber >= 2) return;
+    setStartSecondInningsPending(true);
+    setStartSecondInningsError(null);
+    const previousActive = activeInnings;
+    try {
+      const res = await fetch("/api/scoring/start-innings", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ match_id: bootstrap.matchId }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body.error ?? "Could not start innings 2");
+      }
+      applySecondInningsActivated(
+        body.innings as StartSecondInningsApiInnings,
+        previousActive,
+      );
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Could not start innings 2";
+      setStartSecondInningsError(message);
+      throw err;
+    } finally {
+      setStartSecondInningsPending(false);
     }
-    const inn = body.innings as {
-      id: string;
-      overs_limit: number;
-      target: number | null;
-    };
-    setInningsList((prev) => [
-      ...prev,
-      {
-        id: inn.id,
-        inningsNumber: 2,
-        battingTeam:
-          activeInnings.battingTeam === "red_wings" ? "opponent" : "red_wings",
-        bowlingTeam:
-          activeInnings.bowlingTeam === "red_wings" ? "opponent" : "red_wings",
-        inningsStatus: "not_started" as const,
-        target: inn.target,
-        oversLimit: inn.overs_limit,
-        totalRuns: 0,
-        wickets: 0,
-      },
-    ]);
-    setInningsId(inn.id);
-    setState(createEmptyFromInnings(inn.overs_limit, inn.target));
-    setStriker(null);
-    setNonStriker(null);
-    setBowler(null);
-    setPhase("setup_openers");
-    inningsStartedRef.current = false;
-  }, [bootstrap.matchId, activeInnings.battingTeam, activeInnings.bowlingTeam]);
+  }, [
+    startSecondInningsPending,
+    bootstrap.matchId,
+    activeInnings,
+    applySecondInningsActivated,
+  ]);
 
   const forbiddenBowlerKeys = useMemo(() => {
     const last = lastBowlerKey(state);
@@ -834,6 +1154,7 @@ export function useLiveScoring(
     forbiddenBowlerKeys,
     forbiddenOpponentBowlerName,
     opponentBowlerSuggestions,
+    opponentBowlerOptions,
     opponentBatterSuggestions,
     creaseDisplay,
     wicketReplacementSlot,
@@ -852,13 +1173,11 @@ export function useLiveScoring(
     undo,
     saveInnings,
     startSecondInnings,
+    startSecondInningsPending,
+    startSecondInningsError,
     matchCompleted,
     resultSummary,
-    canSwapInitialStrike,
-    swapInitialStrike,
+    canSelectManualStriker,
+    setManualStriker,
   };
-}
-
-function createEmptyFromInnings(oversLimit: number, target: number | null) {
-  return buildInningsStateFromDeliveries([], oversLimit, target);
 }

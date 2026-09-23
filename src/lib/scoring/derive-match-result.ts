@@ -12,6 +12,9 @@ export interface InningsResultInput {
   wickets: number;
   /** Chase target for this innings (typically first-innings total + 1). */
   target: number | null;
+  /** When false, no match result may be derived from this innings yet. */
+  inningsComplete?: boolean;
+  inningsStatus?: string;
 }
 
 export interface DerivedMatchResult {
@@ -48,9 +51,15 @@ export function formatDerivedResultSummary(
   return `${label} won by ${r} run${r === 1 ? "" : "s"}`;
 }
 
+function isSecondInningsComplete(second: InningsResultInput): boolean {
+  if (second.inningsComplete === true) return true;
+  if (second.inningsStatus === "completed") return true;
+  return false;
+}
+
 /**
  * Derive limited-overs two-innings result from final innings totals.
- * Totals should come from delivery replay when possible.
+ * Prefer delivery replay totals; caller must mark innings incomplete until truly finished.
  */
 export function deriveMatchResult(
   innings: InningsResultInput[],
@@ -81,6 +90,10 @@ export function deriveMatchResult(
     return derived;
   }
 
+  if (!isSecondInningsComplete(second)) {
+    return null;
+  }
+
   if (secondTotal === firstTotal) {
     return {
       result: "tie",
@@ -106,6 +119,42 @@ export function deriveMatchResult(
   };
   derived.resultSummary = formatDerivedResultSummary(derived, opponentName);
   return derived;
+}
+
+/** Build result inputs for deriveMatchResult from scorer innings list + live engine state. */
+export function buildInningsResultInputs(
+  innings: {
+    id: string;
+    inningsNumber: number;
+    battingTeam: BattingSide;
+    totalRuns: number;
+    wickets: number;
+    target: number | null;
+    inningsStatus: string;
+  }[],
+  options: {
+    activeInningsId: string;
+    liveTotalRuns: number;
+    liveWickets: number;
+    liveInningsComplete: boolean;
+  },
+): InningsResultInput[] {
+  return innings.map((inn) => {
+    const live = inn.id === options.activeInningsId;
+    const complete =
+      live && options.liveInningsComplete
+        ? true
+        : inn.inningsStatus === "completed";
+    return {
+      inningsNumber: inn.inningsNumber,
+      battingTeam: inn.battingTeam,
+      totalRuns: live ? options.liveTotalRuns : inn.totalRuns,
+      wickets: live ? options.liveWickets : inn.wickets,
+      target: inn.target,
+      inningsComplete: complete,
+      inningsStatus: complete ? "completed" : inn.inningsStatus,
+    };
+  });
 }
 
 /** Human-readable summary from persisted match columns. */

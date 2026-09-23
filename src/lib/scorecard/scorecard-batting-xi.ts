@@ -4,7 +4,7 @@ import { battingOrder } from "@/lib/scorecard/innings-player-order";
 import type { ScorecardInningsDocument } from "@/lib/scorecard/types";
 import { buildInningsStateFromDeliveries } from "@/lib/scoring-engine";
 import type { DeliveryInput, InningsScoreState } from "@/lib/scoring-engine/types";
-import { strikeRate } from "@/lib/scoring-engine/utils";
+import { participantKey, strikeRate } from "@/lib/scoring-engine/utils";
 import type { BattingSide, InningsRow } from "@/lib/database/types";
 
 export const SCORECARD_BATTING_XI_SIZE = 11;
@@ -25,7 +25,19 @@ function normalizeName(name: string): string {
 }
 
 function memberKey(playerId: string | null, name: string): string {
-  return playerId ?? `name:${normalizeName(name)}`;
+  return participantKey(playerId, normalizeName(name));
+}
+
+function batterIdentityKey(
+  playerId: string | null,
+  name: string,
+): string {
+  if (playerId) return `id:${playerId}`;
+  return participantKey(playerId, normalizeName(name));
+}
+
+function memberIdentityKey(m: ScorecardXiMember): string {
+  return batterIdentityKey(m.playerId, m.name);
 }
 
 function squadXiMembers(squad: ScorecardSquadMember[]): ScorecardXiMember[] {
@@ -77,8 +89,8 @@ function opponentXiMembers(
     }
   }
 
-  return names.slice(0, SCORECARD_BATTING_XI_SIZE).map((name) => ({
-    key: `name:${name}`,
+  return names.slice(0, SCORECARD_BATTING_XI_SIZE).map((name, index) => ({
+    key: `opponent-xi:${index}:${normalizeName(name)}`,
     playerId: null,
     name,
     isGuest: false,
@@ -158,8 +170,11 @@ function didNotBatRow(m: ScorecardXiMember): BattingFigure {
   };
 }
 
-function rowIdentity(row: BattingFigure): string {
-  return normalizeName(row.name);
+function rowIdentityFromBatter(b: {
+  playerId: string | null;
+  name: string;
+}): string {
+  return batterIdentityKey(b.playerId, b.name);
 }
 
 /** Exactly 11 rows: batted players (delivery order) then XI members who did not bat. */
@@ -185,16 +200,16 @@ export function buildScorecardBattingFigures(
 
   for (const b of batted) {
     if (rows.length >= SCORECARD_BATTING_XI_SIZE) break;
-    const row = rowFromBatter(b, guestPlayerIds);
-    const id = rowIdentity(row);
+    const id = rowIdentityFromBatter(b);
     if (seen.has(id)) continue;
     seen.add(id);
-    rows.push(row);
+    if (b.playerId) seen.add(batterIdentityKey(b.playerId, b.name));
+    rows.push(rowFromBatter(b, guestPlayerIds));
   }
 
   for (const member of xi) {
     if (rows.length >= SCORECARD_BATTING_XI_SIZE) break;
-    const id = normalizeName(member.name);
+    const id = memberIdentityKey(member);
     if (seen.has(id)) continue;
     seen.add(id);
     rows.push(didNotBatRow(member));

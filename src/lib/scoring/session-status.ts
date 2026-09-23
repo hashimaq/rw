@@ -19,6 +19,7 @@ export interface MatchSessionStatusPayload {
   pending_transfer: {
     id: string;
     direction: "incoming" | "outgoing";
+    requester_label?: string | null;
   } | null;
   match_status: string;
   match: {

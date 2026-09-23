@@ -1,6 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database/types";
+import { formatScoringDeviceLabel } from "@/lib/scoring/control-display";
 
 export type ScoringControlRole = "none" | "controller" | "viewer";
 
@@ -38,9 +39,19 @@ export async function findPendingTransferForSession(
       .limit(1)
       .maybeSingle();
     if (error) throw error;
-    return data
-      ? { id: data.id, direction: "incoming" as const }
-      : null;
+    if (!data) return null;
+
+    const { data: requester } = await supabase
+      .from("scoring_sessions")
+      .select("device_label")
+      .eq("id", data.requesting_session_id)
+      .maybeSingle();
+
+    return {
+      id: data.id,
+      direction: "incoming" as const,
+      requester_label: formatScoringDeviceLabel(requester?.device_label),
+    };
   }
 
   const { data, error } = await supabase

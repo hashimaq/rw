@@ -5,6 +5,7 @@ import {
   resolveMatchAuditActorUserId,
 } from "@/lib/audit/record-scoring-control";
 import { requireScoringControllerSession } from "@/lib/auth/scoring-session";
+import { notifyScoringControlChange } from "@/lib/scoring/notify-scoring-control-change";
 import { createServiceRoleClient } from "@/lib/supabase/admin";
 
 const bodySchema = z.object({
@@ -64,6 +65,8 @@ export async function POST(request: Request) {
         },
       });
 
+      notifyScoringControlChange(body.match_id, "transfer_responded");
+
       return NextResponse.json({ status: "rejected" });
     }
 
@@ -94,6 +97,8 @@ export async function POST(request: Request) {
         initiator: "scorer_session",
       },
     });
+
+    notifyScoringControlChange(body.match_id, "controller_changed");
 
     return NextResponse.json({
       status: "approved",

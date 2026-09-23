@@ -14,6 +14,7 @@ import {
   buildWicketDelivery,
   type ActiveParticipants,
 } from "./delivery-builders";
+import { participantKey } from "./utils";
 
 const P: ActiveParticipants = {
   strikerPlayerId: "11111111-1111-1111-1111-111111111111",
@@ -36,9 +37,13 @@ describe("scoring engine", () => {
       buildNormalRunDelivery(s, P, uuid(1), 1),
     );
     expect(s.totalRuns).toBe(1);
-    expect(s.strikerKey).toBe(P.nonStrikerPlayerId);
+    expect(s.strikerKey).toBe(
+      participantKey(P.nonStrikerPlayerId, P.nonStrikerName),
+    );
     s = applyDeliveryToState(s, buildNormalRunDelivery(s, P, uuid(2), 4));
-    expect(s.batters[P.strikerPlayerId!].fours).toBe(1);
+    expect(s.batters[participantKey(P.strikerPlayerId, P.strikerName)].fours).toBe(
+      1,
+    );
   });
 
   it("wide does not count as legal ball", () => {
@@ -47,26 +52,51 @@ describe("scoring engine", () => {
     expect(s.totalRuns).toBe(1);
     expect(s.legalBalls).toBe(0);
     expect(s.extrasBreakdown.wides).toBe(1);
-    expect(s.bowlers[P.bowlerPlayerId!]!.widesBowled).toBe(1);
+    expect(
+      s.bowlers[participantKey(P.bowlerPlayerId, P.bowlerName)]!.widesBowled,
+    ).toBe(1);
+    expect(s.batters[participantKey(P.strikerPlayerId, P.strikerName)].runs).toBe(
+      0,
+    );
+    expect(
+      s.batters[participantKey(P.strikerPlayerId, P.strikerName)].balls,
+    ).toBe(0);
   });
 
   it("bye does not add to batter or bowler", () => {
     let s = createEmptyInningsState(20);
     s = applyDeliveryToState(s, buildByeDelivery(s, P, uuid(1), 2));
     expect(s.totalRuns).toBe(2);
-    expect(s.batters[P.strikerPlayerId!].runs).toBe(0);
-    expect(s.bowlers[P.bowlerPlayerId!].runsConceded).toBe(0);
+    expect(s.batters[participantKey(P.strikerPlayerId, P.strikerName)].runs).toBe(
+      0,
+    );
+    expect(
+      s.bowlers[participantKey(P.bowlerPlayerId, P.bowlerName)].runsConceded,
+    ).toBe(0);
     expect(s.legalBalls).toBe(1);
   });
 
   it("no-ball adds extra and batter runs", () => {
     let s = createEmptyInningsState(20);
-    s = applyDeliveryToState(s, buildNoBallDelivery(s, P, uuid(1), 4));
+    s = applyDeliveryToState(
+      s,
+      buildNoBallDelivery(s, P, uuid(1), { kind: "bat", additionalRuns: 4 }),
+    );
     expect(s.totalRuns).toBe(5);
     expect(s.legalBalls).toBe(0);
-    expect(s.batters[P.strikerPlayerId!].runs).toBe(4);
-    expect(s.bowlers[P.bowlerPlayerId!].runsConceded).toBe(5);
-    expect(s.bowlers[P.bowlerPlayerId!]!.noBallsBowled).toBe(1);
+    expect(s.batters[participantKey(P.strikerPlayerId, P.strikerName)].runs).toBe(
+      4,
+    );
+    expect(
+      s.bowlers[participantKey(P.bowlerPlayerId, P.bowlerName)].runsConceded,
+    ).toBe(5);
+    expect(
+      s.bowlers[participantKey(P.bowlerPlayerId, P.bowlerName)]!.noBallsBowled,
+    ).toBe(1);
+    expect(s.extrasBreakdown.noBalls).toBe(1);
+    expect(
+      s.batters[participantKey(P.strikerPlayerId, P.strikerName)].balls,
+    ).toBe(1);
   });
 
   it("undo restores prior state", () => {
@@ -88,7 +118,9 @@ describe("scoring engine", () => {
     s = applyDeliveryToState(s, w);
     expect(s.wickets).toBe(1);
     expect(s.fallOfWickets.length).toBe(1);
-    expect(s.bowlers[P.bowlerPlayerId!].wickets).toBe(1);
+    expect(
+      s.bowlers[participantKey(P.bowlerPlayerId, P.bowlerName)].wickets,
+    ).toBe(1);
   });
 
   it("rotates strike at end of over after even runs", () => {

@@ -19,18 +19,22 @@ import {
 } from "@/components/scoring/rw-batter-picker";
 import {
   OpponentBatterField,
-  OpponentBowlerField,
   ScoringKeypad,
 } from "@/components/scoring/scoring-controls";
+import { OpponentBowlerPickSheet } from "@/components/scoring/scoring-controls-opponent-bowler-sheet";
 import {
   useLiveScoring,
   type ParticipantRef,
 } from "@/lib/scoring/use-live-scoring";
-import { syncCreaseRefsFromEngineState } from "@/lib/scoring/crease-sync";
+import { authoritativeCreaseRefs } from "@/lib/scoring/crease-sync";
 import { validateWicketConfirm } from "@/lib/scoring/wicket-flow";
 import { WicketFlowSheet } from "@/components/scoring/wicket-flow-sheet";
+import type { NoBallRunKind } from "@/lib/scoring-engine/delivery-builders";
 import { participantKey } from "@/lib/scoring-engine/utils";
-import { ScorerConnectionStatus } from "@/components/scoring/scorer-connection-status";
+import {
+  createOpponentBowler,
+  createOpponentParticipant,
+} from "@/lib/scoring/opponent-participant";
 import { ScorerMatchDeleteInfoTrigger } from "@/components/scoring/scorer-match-delete-info-trigger";
 import { cn } from "@/lib/utils/cn";
 
@@ -48,19 +52,32 @@ export function BallScoringPanel({
   const [moreOpen, setMoreOpen] = useState(false);
   const [wicketOpen, setWicketOpen] = useState(false);
   const [extraRunsPicker, setExtraRunsPicker] = useState<
-    null | "wide" | "bye" | "leg_bye" | "no_ball"
+    null | "wide" | "bye" | "leg_bye"
+  >(null);
+  const [noBallFlow, setNoBallFlow] = useState<
+    null | { step: "kind" } | { step: "runs"; kind: NoBallRunKind }
   >(null);
   const [undoConfirm, setUndoConfirm] = useState(false);
   const [saveInningsPending, setSaveInningsPending] = useState(false);
+  const [strikerToast, setStrikerToast] = useState<string | null>(null);
 
   const { summary } = scoring;
-  const canScore = isController && scoring.phase === "scoring";
   const inningsTransition =
     scoring.phase === "innings_complete" ||
     scoring.phase === "innings_saved";
   const inningsComplete =
     inningsTransition || scoring.phase === "match_complete";
   const matchComplete = scoring.phase === "match_complete";
+  const canScore = isController && scoring.phase === "scoring";
+  const canUndoLast =
+    isController &&
+    scoring.state.deliveries.length > 0 &&
+    !matchComplete &&
+    !inningsTransition &&
+    (scoring.phase === "scoring" ||
+      scoring.phase === "need_batter" ||
+      scoring.phase === "need_bowler");
+  const showScoringKeypad = canScore || canUndoLast;
   const battingLabel =
     scoring.battingIsRedWings ? "Red Wings" : bootstrap.opponentName;
 
@@ -91,8 +108,12 @@ export function BallScoringPanel({
   );
 
   const engineCrease = useMemo(
-    () => syncCreaseRefsFromEngineState(scoring.state),
-    [scoring.state],
+    () =>
+      authoritativeCreaseRefs(scoring.state, {
+        striker: scoring.striker,
+        nonStriker: scoring.nonStriker,
+      }),
+    [scoring.state, scoring.striker, scoring.nonStriker],
   );
 
   const fieldingSide = useMemo(() => {
@@ -199,11 +220,20 @@ export function BallScoringPanel({
           ? { name: scoring.nonStriker.name }
           : null
       }
-      canSwapInitialStrike={
-        scoring.canSwapInitialStrike &&
-        (scoring.phase === "scoring" || scoring.phase === "setup_openers")
+      pendingStrikerRef={
+        scoring.state.deliveries.length === 0 ? scoring.striker : null
       }
-      onSwapInitialStrike={scoring.swapInitialStrike}
+      pendingNonStrikerRef={
+        scoring.state.deliveries.length === 0 ? scoring.nonStriker : null
+      }
+      canSelectManualStriker={scoring.canSelectManualStriker}
+      onSelectManualStriker={(ref) => {
+        const msg = scoring.setManualStriker(ref);
+        if (msg) {
+          setStrikerToast(msg);
+          window.setTimeout(() => setStrikerToast(null), 2200);
+        }
+      }}
     />
   );
 
@@ -214,6 +244,14 @@ export function BallScoringPanel({
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-3">
         {tab === "scoring" ? (
           <div className="space-y-3">
+            {strikerToast ? (
+              <p
+                className="rounded-lg bg-[var(--rw-surface-hover)] px-3 py-2 text-center text-sm font-medium text-[var(--rw-text)]"
+                role="status"
+              >
+                {strikerToast}
+              </p>
+            ) : null}
             <section aria-label="Live match">{liveScorecard}</section>
 
             {matchComplete ? (
@@ -248,16 +286,8 @@ export function BallScoringPanel({
                   }
                 }}
                 onStartSecondInnings={() => scoring.startSecondInnings()}
-              />
-            ) : null}
-
-            {isController ? (
-              <ScorerConnectionStatus
-                isOnline={scoring.isOnline}
-                isSyncing={scoring.isSyncing}
-                syncPending={scoring.syncPending}
-                syncError={scoring.syncError}
-                className="px-1"
+                startSecondPending={scoring.startSecondInningsPending}
+                startSecondError={scoring.startSecondInningsError}
               />
             ) : null}
 
@@ -309,14 +339,15 @@ export function BallScoringPanel({
         ) : null}
       </div>
 
-      {canScore && tab === "scoring" ? (
+      {showScoringKeypad && tab === "scoring" ? (
         <div className="sticky bottom-0 z-20 shrink-0">
           <ScoringKeypad
+            scoringEnabled={canScore}
             onRun={(n) => void scoring.recordRun(n)}
             onLegBye={() => setExtraRunsPicker("leg_bye")}
             onBye={() => setExtraRunsPicker("bye")}
             onWide={() => setExtraRunsPicker("wide")}
-            onNoBall={() => setExtraRunsPicker("no_ball")}
+            onNoBall={() => setNoBallFlow({ step: "kind" })}
             onMore={() => setMoreOpen(true)}
             onDeadBall={() => void scoring.recordDeadBall()}
             onUndo={() => {
@@ -345,14 +376,7 @@ export function BallScoringPanel({
             void scoring.recordRun(5);
             setMoreOpen(false);
           }}
-          canSwapStrike={
-            scoring.canSwapInitialStrike &&
-            (scoring.phase === "scoring" || scoring.phase === "setup_openers")
-          }
-          onSwapStrike={() => {
-            scoring.swapInitialStrike();
-            setMoreOpen(false);
-          }}
+
         />
       ) : null}
 
@@ -360,22 +384,65 @@ export function BallScoringPanel({
         <RunsPickerSheet
           title={
             extraRunsPicker === "wide"
-              ? "Wide runs"
-              : extraRunsPicker === "no_ball"
-                ? "Runs off the bat (no-ball)"
-                : extraRunsPicker === "bye"
-                  ? "Byes"
-                  : "Leg byes"
+              ? "Wide"
+              : extraRunsPicker === "bye"
+                ? "Byes"
+                : "Leg byes"
           }
+          wideAdditionalRuns={extraRunsPicker === "wide"}
           onPick={(n) => {
-            if (extraRunsPicker === "wide") void scoring.recordWide(n);
-            else if (extraRunsPicker === "no_ball") void scoring.recordNoBall(n);
-            else if (extraRunsPicker === "bye") void scoring.recordBye(n);
+            if (extraRunsPicker === "wide") {
+              void scoring.recordWide(n);
+            } else if (extraRunsPicker === "bye") void scoring.recordBye(n);
             else void scoring.recordLegBye(n);
             setExtraRunsPicker(null);
           }}
           onClose={() => setExtraRunsPicker(null)}
         />
+      ) : null}
+
+      {noBallFlow?.step === "kind" ? (
+        <NoBallKindSheet
+          onPick={(kind) => {
+            if (kind === "none") {
+              void scoring.recordNoBall("none", 0);
+              setNoBallFlow(null);
+              return;
+            }
+            setNoBallFlow({ step: "runs", kind });
+          }}
+          onClose={() => setNoBallFlow(null)}
+        />
+      ) : null}
+
+      {noBallFlow?.step === "runs" ? (
+        <RunsPickerSheet
+          title={
+            noBallFlow.kind === "bat"
+              ? "Runs off the bat (no-ball)"
+              : noBallFlow.kind === "bye"
+                ? "Byes off the no-ball"
+                : "Leg byes off the no-ball"
+          }
+          onPick={(n) => {
+            void scoring.recordNoBall(noBallFlow.kind, n);
+            setNoBallFlow(null);
+          }}
+          onClose={() => setNoBallFlow(null)}
+        />
+      ) : null}
+
+      {scoring.phase === "need_batter" && isController ? (
+        <NeedBatterOverlay
+          scoring={scoring}
+          dismissedKeys={dismissedKeys}
+          atCreaseKeys={atCreaseKeys}
+          rwBatterOptions={rwBatterOptions}
+        />
+      ) : null}
+
+      {scoring.phase === "need_bowler" && isController ? (
+        <NeedBowlerOverlay scoring={scoring} />
       ) : null}
 
       {wicketOpen ? (
@@ -393,6 +460,100 @@ export function BallScoringPanel({
           }}
         />
       ) : null}
+    </div>
+  );
+}
+
+function NeedBowlerOverlay({
+  scoring,
+}: {
+  scoring: ReturnType<typeof useLiveScoring>;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex min-w-0 items-end bg-black/40 p-3 sm:items-center sm:justify-center sm:p-4">
+      <div className="flex max-h-[min(85vh,100dvh)] w-full min-w-0 max-w-md flex-col overflow-hidden rounded-2xl bg-[var(--rw-bg)] shadow-xl">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain p-4">
+          {scoring.bowlingIsRedWings ? (
+            <PlayerPickSheet
+              title="Select next bowler"
+              subtitle="Cannot bowl consecutive overs"
+              players={scoring.bowlingXi.map((p) => ({
+                playerId: p.id,
+                name: p.name,
+              }))}
+              disabledKeys={scoring.forbiddenBowlerKeys}
+              onPick={scoring.confirmBowler}
+            />
+          ) : (
+            <OpponentBowlerPickSheet
+              title="Next over — opponent bowler"
+              subtitle="Previously used bowlers stay available except the last over"
+              bowlers={scoring.opponentBowlerOptions}
+              forbiddenKey={
+                scoring.forbiddenBowlerKeys.size > 0
+                  ? [...scoring.forbiddenBowlerKeys][0] ?? null
+                  : null
+              }
+              onPick={scoring.confirmBowler}
+              onConfirmNew={scoring.confirmOpponentBowler}
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NeedBatterOverlay({
+  scoring,
+  dismissedKeys,
+  atCreaseKeys,
+  rwBatterOptions,
+}: {
+  scoring: ReturnType<typeof useLiveScoring>;
+  dismissedKeys: Set<string>;
+  atCreaseKeys: Set<string>;
+  rwBatterOptions: RwBatterOption[];
+}) {
+  const slotLabel =
+    scoring.wicketReplacementSlot === "non_striker"
+      ? "Select non-striker"
+      : "Select striker";
+
+  if (!scoring.battingIsRedWings) {
+    return (
+      <div className="fixed inset-0 z-50 flex min-w-0 items-end bg-black/40 p-3 sm:items-center sm:justify-center sm:p-4">
+        <div className="max-h-[min(85vh,100dvh)] w-full min-w-0 max-w-md overflow-y-auto overscroll-y-contain rounded-2xl bg-[var(--rw-bg)] p-4 shadow-xl">
+          <OpponentBatterField
+            title="New opponent batter"
+            suggestions={scoring.opponentBatterSuggestions}
+            onConfirm={(name) => void scoring.confirmOpponentBatter(name)}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  const candidates = rwBatterOptions.filter((p) => {
+    const key = participantKey(p.id, p.name);
+    if (dismissedKeys.has(key)) return false;
+    if (atCreaseKeys.has(key)) return false;
+    return true;
+  });
+
+  return (
+    <div className="fixed inset-0 z-50 flex min-w-0 items-end bg-black/40 p-3 sm:items-center sm:justify-center sm:p-4">
+      <div className="flex max-h-[min(85vh,100dvh)] w-full min-w-0 max-w-md flex-col overflow-hidden rounded-2xl bg-[var(--rw-bg)] shadow-xl">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain p-4">
+          <RwBatterPickSheet
+            title={slotLabel}
+            subtitle="Choose the next batter to continue scoring"
+            options={candidates}
+            onCreateGuest={(name) => scoring.createMatchGuestPlayer(name)}
+            onPick={(p) => void scoring.confirmNewBatter(p)}
+          />
+        </div>
+      </div>
     </div>
   );
 }
@@ -424,57 +585,6 @@ function PhasePanels({
         opponentBowlerSuggestions={scoring.opponentBowlerSuggestions}
         onCreateGuest={(name) => scoring.createMatchGuestPlayer(name)}
         onConfirm={scoring.confirmOpeners}
-      />
-    );
-  }
-
-  if (phase === "need_bowler") {
-    if (scoring.bowlingIsRedWings) {
-      return (
-        <PlayerPickSheet
-          title="Select Red Wings bowler"
-          subtitle="Cannot bowl consecutive overs"
-          players={scoring.bowlingXi.map((p) => ({
-            playerId: p.id,
-            name: p.name,
-          }))}
-          disabledKeys={scoring.forbiddenBowlerKeys}
-          onPick={scoring.confirmBowler}
-        />
-      );
-    }
-    return (
-      <OpponentBowlerField
-        title="Next over — opponent bowler"
-        suggestions={scoring.opponentBowlerSuggestions}
-        forbiddenName={scoring.forbiddenOpponentBowlerName}
-        onConfirm={scoring.confirmOpponentBowler}
-      />
-    );
-  }
-
-  if (phase === "need_batter") {
-    if (!scoring.battingIsRedWings) {
-      return (
-        <OpponentBatterField
-          title="New opponent batter"
-          suggestions={scoring.opponentBatterSuggestions}
-          onConfirm={scoring.confirmOpponentBatter}
-        />
-      );
-    }
-    const candidates = rwBatterOptions.filter((p) => {
-      const key = participantKey(p.id, p.name);
-      if (dismissedKeys.has(key)) return false;
-      if (atCreaseKeys.has(key)) return false;
-      return true;
-    });
-    return (
-      <RwBatterPickSheet
-        title="New Red Wings batter"
-        options={candidates}
-        onCreateGuest={(name) => scoring.createMatchGuestPlayer(name)}
-        onPick={scoring.confirmNewBatter}
       />
     );
   }
@@ -678,8 +788,8 @@ function SetupOpenersPanel({
             const s = oppStrikerName.trim();
             const ns = oppNonStrikerName.trim();
             if (!s || !ns || s.toLowerCase() === ns.toLowerCase()) return;
-            sRef = { playerId: null, name: s };
-            nsRef = { playerId: null, name: ns };
+            sRef = createOpponentParticipant(s);
+            nsRef = createOpponentParticipant(ns);
           }
           let b: ParticipantRef;
           if (bowlingIsRedWings) {
@@ -689,7 +799,7 @@ function SetupOpenersPanel({
           } else {
             const trimmed = oppBowlerName.trim();
             if (!trimmed) return;
-            b = { playerId: null, name: trimmed };
+            b = createOpponentBowler(trimmed);
           }
           onConfirm(sRef, nsRef, b);
         }}
@@ -754,7 +864,11 @@ function PlayerPickSheet({
                 onClick={() => onPick(p)}
               >
                 {p.name}
-                {disabled ? " · previous over" : ""}
+                {disabled ? (
+                  <span className="mt-0.5 block text-[11px] font-normal text-[var(--rw-muted)]">
+                    Bowled last over
+                  </span>
+                ) : null}
               </button>
             </li>
           );
@@ -768,14 +882,10 @@ function MoreOptionsSheet({
   onClose,
   onDeadBall,
   onFive,
-  canSwapStrike,
-  onSwapStrike,
 }: {
   onClose: () => void;
   onDeadBall: () => void;
   onFive: () => void;
-  canSwapStrike: boolean;
-  onSwapStrike: () => void;
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end bg-black/40 p-4 sm:items-center sm:justify-center">
@@ -796,15 +906,47 @@ function MoreOptionsSheet({
           >
             Dead ball
           </button>
-          {canSwapStrike ? (
+        </div>
+        <button
+          type="button"
+          className="rw-focus-ring mt-3 w-full min-h-10 text-sm font-semibold text-[var(--rw-muted)]"
+          onClick={onClose}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function NoBallKindSheet({
+  onPick,
+  onClose,
+}: {
+  onPick: (kind: NoBallRunKind) => void;
+  onClose: () => void;
+}) {
+  const options: { kind: NoBallRunKind; label: string }[] = [
+    { kind: "none", label: "No extra run" },
+    { kind: "bat", label: "Off the bat" },
+    { kind: "bye", label: "Byes" },
+    { kind: "leg_bye", label: "Leg byes" },
+  ];
+  return (
+    <div className="fixed inset-0 z-50 flex items-end bg-black/40 p-4 sm:items-center sm:justify-center">
+      <div className="w-full max-w-sm rounded-2xl bg-[var(--rw-bg)] p-4 shadow-xl">
+        <p className="font-semibold">No ball</p>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          {options.map((opt) => (
             <button
+              key={opt.kind}
               type="button"
-              className="rw-focus-ring col-span-2 min-h-12 rounded-xl border font-bold"
-              onClick={onSwapStrike}
+              className="rw-focus-ring min-h-12 rounded-xl border px-2 text-sm font-semibold"
+              onClick={() => onPick(opt.kind)}
             >
-              Swap strike
+              {opt.label}
             </button>
-          ) : null}
+          ))}
         </div>
         <button
           type="button"
@@ -822,10 +964,13 @@ function RunsPickerSheet({
   title,
   onPick,
   onClose,
+  wideAdditionalRuns = false,
 }: {
   title: string;
   onPick: (n: number) => void;
   onClose: () => void;
+  /** Wide: n = additional runs beyond the mandatory wide penalty (+1 team run). */
+  wideAdditionalRuns?: boolean;
 }) {
   const opts = [0, 1, 2, 3, 4, 5, 6];
   return (
@@ -840,7 +985,7 @@ function RunsPickerSheet({
               className="rw-focus-ring min-h-12 rounded-xl border font-bold"
               onClick={() => onPick(n)}
             >
-              {n}
+              {wideAdditionalRuns ? `Wide +${n}` : n}
             </button>
           ))}
         </div>
