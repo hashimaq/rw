@@ -62,6 +62,28 @@ export function BallScoringPanel({
   const [strikerToast, setStrikerToast] = useState<string | null>(null);
 
   const { summary } = scoring;
+
+  const activeBowlerDisplay = useMemo(() => {
+    const fromSummary = summary.bowler;
+    if (fromSummary) {
+      return {
+        name: fromSummary.name,
+        legalBalls: fromSummary.legalBalls,
+        runsConceded: fromSummary.runsConceded,
+        wickets: fromSummary.wickets,
+        maidens: fromSummary.maidens,
+      };
+    }
+    const selected = scoring.bowler;
+    if (!selected) return null;
+    return {
+      name: selected.name,
+      legalBalls: 0,
+      runsConceded: 0,
+      wickets: 0,
+      maidens: 0,
+    };
+  }, [summary.bowler, scoring.bowler]);
   const inningsTransition =
     scoring.phase === "innings_complete" ||
     scoring.phase === "innings_saved";
@@ -185,17 +207,7 @@ export function BallScoringPanel({
       strikerKey={scoring.state.strikerKey}
       nonStrikerKey={scoring.state.nonStrikerKey}
       crease={scoring.creaseDisplay}
-      bowler={
-        summary.bowler
-          ? {
-              name: summary.bowler.name,
-              legalBalls: summary.bowler.legalBalls,
-              runsConceded: summary.bowler.runsConceded,
-              wickets: summary.bowler.wickets,
-              maidens: summary.bowler.maidens,
-            }
-          : null
-      }
+      bowler={activeBowlerDisplay}
       currentOverDeliveries={summary.currentOverDeliveries}
       partnership={
         summary.partnership

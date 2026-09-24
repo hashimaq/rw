@@ -67,19 +67,32 @@ export function wicketReplacementSlotFromEngineState(
   );
 }
 
+function bowlerRefFromEngineState(
+  state: InningsScoreState,
+): ParticipantRef | null {
+  if (state.currentBowlerKey) {
+    const b = state.bowlers[state.currentBowlerKey];
+    if (b) {
+      return { playerId: b.playerId, name: b.name };
+    }
+  }
+  const last = state.deliveries[state.deliveries.length - 1];
+  if (last?.bowlerName) {
+    return { playerId: last.bowlerPlayerId, name: last.bowlerName };
+  }
+  return null;
+}
+
 export function participantRefsFromEngineState(state: InningsScoreState): {
   striker: ParticipantRef | null;
   nonStriker: ParticipantRef | null;
   bowler: ParticipantRef | null;
 } {
   const crease = syncCreaseRefsFromEngineState(state);
-  const last = state.deliveries[state.deliveries.length - 1];
   return {
     striker: crease.striker,
     nonStriker: crease.nonStriker,
-    bowler: last
-      ? { playerId: last.bowlerPlayerId, name: last.bowlerName }
-      : null,
+    bowler: bowlerRefFromEngineState(state),
   };
 }
 

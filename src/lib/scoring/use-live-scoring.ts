@@ -335,7 +335,7 @@ export function useLiveScoring(
       const snap = scoringUiSnapshotFromEngineState(engineState, phaseContext);
       setStriker(snap.striker);
       setNonStriker(snap.nonStriker);
-      if (snap.bowler) setBowler(snap.bowler);
+      setBowler(snap.bowler);
       if (snap.phase === "match_complete") setMatchCompleted(true);
       setPhase(snap.phase);
     },
@@ -581,7 +581,7 @@ export function useLiveScoring(
       const snap = scoringUiSnapshotFromEngineState(result.next, phaseContext);
       setStriker(snap.striker);
       setNonStriker(snap.nonStriker);
-      if (snap.bowler) setBowler(snap.bowler);
+      setBowler(snap.bowler);
       setPhase(snap.phase);
 
       persistDeliveryInBackground(result.delivery);
@@ -619,7 +619,7 @@ export function useLiveScoring(
         const snap = scoringUiSnapshotFromEngineState(result.next, phaseContext);
         setStriker(snap.striker);
         setNonStriker(snap.nonStriker);
-        if (snap.bowler) setBowler(snap.bowler);
+        setBowler(snap.bowler);
         if (snap.phase === "match_complete") {
           setMatchCompleted(true);
           if (activeInnings.inningsNumber >= 2) {
@@ -872,8 +872,15 @@ export function useLiveScoring(
       setNonStriker(ns);
       setBowler(b);
       setPhase("scoring");
+      commitParticipantsMeta((base, clientEventId) =>
+        buildCreaseCorrectionDelivery(
+          base,
+          participantsFromRefs(s, ns, b),
+          clientEventId,
+        ),
+      );
     },
-    [],
+    [commitParticipantsMeta],
   );
 
   const confirmBowler = useCallback(
