@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ScoringBootstrap } from "@/lib/data/scoring-bootstrap";
 import { InningsTransitionPanel } from "@/components/scoring/innings-transition-panel";
 import { MatchCompleteSummary } from "@/components/scoring/match-complete-summary";
@@ -41,13 +41,22 @@ import { cn } from "@/lib/utils/cn";
 interface BallScoringPanelProps {
   bootstrap: ScoringBootstrap;
   isController: boolean;
+  onMatchStatusChange?: (status: ScoringBootstrap["status"]) => void;
 }
 
 export function BallScoringPanel({
   bootstrap,
   isController,
+  onMatchStatusChange,
 }: BallScoringPanelProps) {
   const scoring = useLiveScoring(bootstrap, isController);
+  const matchComplete = scoring.phase === "match_complete";
+
+  useEffect(() => {
+    if (matchComplete) {
+      onMatchStatusChange?.("completed");
+    }
+  }, [matchComplete, onMatchStatusChange]);
   const [tab, setTab] = useState<MatchCentreTab>("scoring");
   const [moreOpen, setMoreOpen] = useState(false);
   const [wicketOpen, setWicketOpen] = useState(false);
@@ -87,9 +96,7 @@ export function BallScoringPanel({
   const inningsTransition =
     scoring.phase === "innings_complete" ||
     scoring.phase === "innings_saved";
-  const inningsComplete =
-    inningsTransition || scoring.phase === "match_complete";
-  const matchComplete = scoring.phase === "match_complete";
+  const inningsComplete = inningsTransition || matchComplete;
   const canScore = isController && scoring.phase === "scoring";
   const canUndoLast =
     isController &&
@@ -344,7 +351,7 @@ export function BallScoringPanel({
                 matchId={bootstrap.matchId}
                 matchNumber={bootstrap.matchNumber}
                 opponentName={bootstrap.opponentName}
-                status={bootstrap.status}
+                status={matchComplete ? "completed" : bootstrap.status}
               />
             ) : null}
           </>

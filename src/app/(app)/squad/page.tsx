@@ -7,12 +7,16 @@ import { getOfficialPlayers } from "@/lib/data/players";
 export const metadata = { title: "Squad" };
 
 export default async function SquadPage() {
-  const { admin } = await getServerSession();
-
+  let admin = false;
   let players: Player[] = [];
   let failed = false;
   try {
-    players = await getOfficialPlayers(true);
+    const [session, rows] = await Promise.all([
+      getServerSession(),
+      getOfficialPlayers(true),
+    ]);
+    admin = session.admin;
+    players = rows;
   } catch {
     failed = true;
   }

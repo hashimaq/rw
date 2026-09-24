@@ -10,13 +10,19 @@ import { fetchHomeMatches } from "@/lib/data/matches";
 import type { Match } from "@/lib/database/types";
 
 export default async function HomePage() {
-  const { admin } = await getServerSession();
+  let admin = false;
   let liveMatches: Match[] = [];
   let recentMatches: Match[] = [];
   let loadError = false;
 
   try {
-    ({ live: liveMatches, recent: recentMatches } = await fetchHomeMatches());
+    const [session, home] = await Promise.all([
+      getServerSession(),
+      fetchHomeMatches(),
+    ]);
+    admin = session.admin;
+    liveMatches = home.live;
+    recentMatches = home.recent;
   } catch {
     loadError = true;
   }

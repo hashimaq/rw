@@ -1,6 +1,9 @@
+import { revalidatePath, revalidateTag } from "next/cache";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { scheduleMatchAiAnalysis } from "@/lib/ai/run-match-ai-analysis";
 import { verifyScorerPin } from "@/lib/auth/scorer-pin";
+import { CACHE_TAGS } from "@/lib/cache/tags";
 import {
   requireScoringControllerSession,
   ScoringAuthorizationError,
@@ -69,6 +72,12 @@ export async function POST(request: Request) {
       })
       .eq("id", session.sessionId)
       .eq("status", "active");
+
+    scheduleMatchAiAnalysis(match.id);
+    if (match.share_slug) {
+      revalidateTag(CACHE_TAGS.completedScorecards, "max");
+      revalidatePath(`/match/${match.share_slug}`);
+    }
 
     const response = NextResponse.json({
       match_id: match.id,

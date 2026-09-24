@@ -8,11 +8,16 @@ import type { Match } from "@/lib/database/types";
 export const metadata = { title: "Matches" };
 
 export default async function MatchesPage() {
-  const { admin } = await getServerSession();
+  let admin = false;
   let matches: Match[] = [];
   let failed = false;
   try {
-    matches = await fetchAllMatches();
+    const [session, rows] = await Promise.all([
+      getServerSession(),
+      fetchAllMatches(),
+    ]);
+    admin = session.admin;
+    matches = rows;
   } catch {
     failed = true;
   }

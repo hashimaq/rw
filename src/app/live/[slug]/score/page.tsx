@@ -1,4 +1,3 @@
-import { createClient } from "@/lib/supabase/server";
 import { LiveScoreScreen } from "@/components/live/live-score-screen";
 import { loadScoringBootstrap } from "@/lib/data/scoring-bootstrap";
 
@@ -8,15 +7,9 @@ interface PageProps {
 
 export default async function PublicLiveScorePage({ params }: PageProps) {
   const { slug } = await params;
-  const supabase = await createClient();
+  const bootstrap = await loadScoringBootstrap(slug);
 
-  const { data: match } = await supabase
-    .from("matches")
-    .select("id, match_number, opponent_name, status, overs_limit")
-    .eq("share_slug", slug)
-    .maybeSingle();
-
-  if (!match) {
+  if (!bootstrap) {
     return (
       <main className="p-6">
         <p className="font-medium">Match no longer available.</p>
@@ -27,16 +20,14 @@ export default async function PublicLiveScorePage({ params }: PageProps) {
     );
   }
 
-  const bootstrap = await loadScoringBootstrap(slug);
-
   return (
     <LiveScoreScreen
       slug={slug}
-      matchId={match.id}
-      matchNumber={match.match_number}
-      opponentName={match.opponent_name}
-      status={match.status}
-      oversLabel={`${match.overs_limit} overs`}
+      matchId={bootstrap.matchId}
+      matchNumber={bootstrap.matchNumber}
+      opponentName={bootstrap.opponentName}
+      status={bootstrap.status}
+      oversLabel={`${bootstrap.oversLimit} overs`}
       bootstrap={bootstrap}
     />
   );

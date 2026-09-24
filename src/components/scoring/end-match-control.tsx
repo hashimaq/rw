@@ -54,7 +54,6 @@ export function EndMatchControl({ className }: EndMatchControlProps) {
       }
 
       router.push(body.share_slug ? `/live/${body.share_slug}/score` : "/matches");
-      router.refresh();
     } catch {
       setError("Could not end match. Try again.");
       setSubmitting(false);

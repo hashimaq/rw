@@ -1,9 +1,15 @@
 import "server-only";
 
-import type { BattingSide, Match } from "@/lib/database/types";
+import { unstable_cache } from "next/cache";
+import { cache } from "react";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { BattingSide, Database, Match } from "@/lib/database/types";
+import { CACHE_TAGS } from "@/lib/cache/tags";
+import { getServerSession } from "@/lib/auth/server-session";
 import { completedMatchSortKey } from "@/lib/data/completed-scorecard-list-format";
 import { resultSummaryFromPersistedMatch } from "@/lib/scoring/derive-match-result";
 import { createClient } from "@/lib/supabase/server";
+import { createPublicSupabaseClient } from "@/lib/supabase/public";
 
 export const COMPLETED_SCORECARDS_PAGE_SIZE = 40;
 
@@ -51,12 +57,10 @@ type MatchRow = Pick<
   }>;
 };
 
-/** Lightweight completed-match list for `/scorecards` (no deliveries). */
-export async function fetchCompletedScorecardSummaries(
-  limit = COMPLETED_SCORECARDS_PAGE_SIZE,
+async function queryCompletedScorecardSummaries(
+  supabase: SupabaseClient<Database>,
+  limit: number,
 ): Promise<CompletedScorecardSummary[]> {
-  const supabase = await createClient();
-
   const { data, error } = await supabase
     .from("matches")
     .select(
@@ -119,3 +123,36 @@ export async function fetchCompletedScorecardSummaries(
     completedMatchSortKey(b).localeCompare(completedMatchSortKey(a)),
   );
 }
+
+async function loadCompletedScorecardSummariesForSession(
+  limit: number,
+): Promise<CompletedScorecardSummary[]> {
+  const supabase = await createClient();
+  return queryCompletedScorecardSummaries(supabase, limit);
+}
+
+const getCachedPublicCompletedScorecardSummaries = unstable_cache(
+  async (limit: number) => {
+    const supabase = createPublicSupabaseClient();
+    return queryCompletedScorecardSummaries(supabase, limit);
+  },
+  ["completed-scorecards-public-v1"],
+  {
+    tags: [CACHE_TAGS.completedScorecards, CACHE_TAGS.matches],
+    revalidate: 120,
+  },
+);
+
+/**
+ * Public list uses anon client + `unstable_cache` (no cookies).
+ * Admins use a fresh session-scoped query (RLS may include non-public matches).
+ */
+export const fetchCompletedScorecardSummaries = cache(
+  async (limit = COMPLETED_SCORECARDS_PAGE_SIZE) => {
+    const { admin } = await getServerSession();
+    if (admin) {
+      return loadCompletedScorecardSummariesForSession(limit);
+    }
+    return getCachedPublicCompletedScorecardSummaries(limit);
+  },
+);

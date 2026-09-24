@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import {
   useCallback,
   useEffect,
@@ -125,7 +124,6 @@ export function useLiveScoring(
   bootstrap: ScoringBootstrap,
   isController: boolean,
 ) {
-  const router = useRouter();
   const [inningsList, setInningsList] = useState(bootstrap.innings);
   const [inningsId, setInningsId] = useState(bootstrap.activeInningsId);
 
@@ -241,16 +239,14 @@ export function useLiveScoring(
         if (typeof body.result_summary === "string") {
           setResultSummary(body.result_summary);
         }
-        router.refresh();
       } else if (inningsNumber >= 2) {
         setMatchCompleted(true);
         setPhase("match_complete");
-        router.refresh();
       } else {
         setPhase("innings_saved");
       }
     },
-    [router],
+    [],
   );
 
   const battingIsRedWings = activeInnings.battingTeam === "red_wings";

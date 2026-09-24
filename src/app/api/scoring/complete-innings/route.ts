@@ -1,7 +1,7 @@
-import { revalidatePath } from "next/cache";
-import { after } from "next/server";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { NextResponse } from "next/server";
 import { scheduleMatchAiAnalysis } from "@/lib/ai/run-match-ai-analysis";
+import { CACHE_TAGS } from "@/lib/cache/tags";
 import { z } from "zod";
 import {
   requireScoringControllerSession,
@@ -128,12 +128,12 @@ export async function POST(request: Request) {
 
     if (matchCompleted) {
       scheduleMatchAiAnalysis(innings.match_id);
-      after(() => {
-        scheduleMatchAiAnalysis(innings.match_id);
-      });
     }
 
     if (matchMeta?.share_slug) {
+      if (matchCompleted) {
+        revalidateTag(CACHE_TAGS.completedScorecards, "max");
+      }
       revalidatePath(`/match/${matchMeta.share_slug}`);
     }
 

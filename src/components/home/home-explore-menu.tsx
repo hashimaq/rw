@@ -35,6 +35,7 @@ export function HomeExploreMenu({ isAdmin = false, className }: HomeExploreMenuP
           <li key={item.href} className="min-w-0">
             <Link
               href={item.href}
+              prefetch
               className="rw-focus-ring rw-card-interactive block truncate rounded-xl border border-[var(--rw-border)] bg-[var(--rw-surface-hover)]/40 px-3 py-3 text-sm font-semibold"
             >
               {item.label}

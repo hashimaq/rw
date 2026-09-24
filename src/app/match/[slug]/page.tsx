@@ -6,6 +6,7 @@ import { BackButton, PageBackAnchor } from "@/components/ui/back-button";
 import { getServerSession } from "@/lib/auth/server-session";
 import type { MatchAiAnalysisView } from "@/lib/ai/match-analysis-types";
 import { loadMatchScorecardPage } from "@/lib/data/match-scorecard";
+import { getMatchScorecardPageTitle } from "@/lib/data/match-scorecard-title";
 import { publicLivePath } from "@/lib/match/share-slug";
 
 function aiAdminPanelStatus(
@@ -34,12 +35,9 @@ interface PageProps {
 
 export async function generateMetadata({ params }: PageProps) {
   const { slug } = await params;
-  const result = await loadMatchScorecardPage(slug, false);
-  if (result.status !== "ok") {
-    return { title: "Scorecard" };
-  }
+  const matchNumber = await getMatchScorecardPageTitle(slug);
   return {
-    title: `${result.data.document.matchNumber} · Scorecard`,
+    title: matchNumber ? `${matchNumber} · Scorecard` : "Scorecard",
   };
 }
 
@@ -84,8 +82,10 @@ export default async function PublicMatchScorecardPage({
     ? "Back to scorecards"
     : "Back to match centre";
 
-  const { admin } = await getServerSession();
-  const result = await loadMatchScorecardPage(slug, admin);
+  const [{ admin }, result] = await Promise.all([
+    getServerSession(),
+    loadMatchScorecardPage(slug),
+  ]);
 
   if (result.status === "not_found") {
     return (

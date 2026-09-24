@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { ScorecardDownloadLink } from "@/components/scorecard/scorecard-download-link";
 import type { ScoringInningsInfo } from "@/lib/data/scoring-bootstrap";
 import type { BattingSide } from "@/lib/database/types";
 import { publicScorecardPath } from "@/lib/match/share-slug";
@@ -40,8 +41,10 @@ export function MatchCompleteSummary({
           {resultSummary}
         </p>
       ) : null}
+      <ScorecardDownloadLink shareSlug={shareSlug} />
       <Link
         href={publicScorecardPath(shareSlug)}
+        prefetch
         className="rw-focus-ring rw-btn-primary mt-1 block w-full text-center"
       >
         View Complete Scorecard

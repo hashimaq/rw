@@ -21,6 +21,7 @@ import {
 import type { MatchAiAnalysisRow } from "@/lib/database/types";
 import type { FullMatchScorecardData } from "@/lib/scorecard/types";
 import type { Delivery, InningsRow, Match } from "@/lib/database/types";
+import { getServerSession } from "@/lib/auth/server-session";
 import { resultSummaryFromPersistedMatch } from "@/lib/scoring/derive-match-result";
 import { createServiceRoleClient } from "@/lib/supabase/admin";
 
@@ -156,6 +157,18 @@ async function loadPlayersForPersisted(
   return loadPlayersForIds(playerIds);
 }
 
+async function fetchMatchAiAnalysisRow(
+  matchId: string,
+): Promise<MatchAiAnalysisRow | null> {
+  const supabase = createServiceRoleClient();
+  const { data: aiRow } = await supabase
+    .from("match_ai_analysis")
+    .select("status, error_message, generated_analysis")
+    .eq("match_id", matchId)
+    .maybeSingle();
+  return (aiRow as MatchAiAnalysisRow | null) ?? null;
+}
+
 async function buildScorecardFromPersistedFetch(
   match: MatchScorecardRow,
   persisted: {
@@ -164,13 +177,16 @@ async function buildScorecardFromPersistedFetch(
     deliveryRows: Delivery[];
   },
 ): Promise<FullMatchScorecardData | null> {
-  const players = await loadPlayersForPersisted(persisted);
+  const [players, aiRow] = await Promise.all([
+    loadPlayersForPersisted(persisted),
+    fetchMatchAiAnalysisRow(match.id),
+  ]);
   const built = await buildScorecardCoreFromPersisted(
     match,
     persisted,
     players,
   );
-  return enrichScorecardWithAiAnalysis(built, persisted, players);
+  return enrichScorecardWithAiAnalysis(built, persisted, players, aiRow);
 }
 
 async function enrichScorecardWithAiAnalysis(
@@ -181,17 +197,16 @@ async function enrichScorecardWithAiAnalysis(
     deliveryRows: Delivery[];
   },
   players: Awaited<ReturnType<typeof loadPlayersForIds>>,
+  aiRowPrefetched?: MatchAiAnalysisRow | null,
 ): Promise<FullMatchScorecardData> {
   const incomplete = persistedScorecardDataIncomplete(
     persisted.innings,
     persisted.deliveryRows,
   );
-  const supabase = createServiceRoleClient();
-  const { data: aiRow } = await supabase
-    .from("match_ai_analysis")
-    .select("status, error_message, generated_analysis")
-    .eq("match_id", data.matchId)
-    .maybeSingle();
+  const aiRow =
+    aiRowPrefetched !== undefined
+      ? aiRowPrefetched
+      : await fetchMatchAiAnalysisRow(data.matchId);
 
   const deliveriesByInningsId = deliveriesByInningsFromRows(
     persisted.innings,
@@ -261,9 +276,15 @@ async function attachFreshAiAnalysis(
     squadRows: PersistedSquadRow[];
     deliveryRows: Delivery[];
   },
+  players: Awaited<ReturnType<typeof loadPlayersForIds>>,
+  aiRowPrefetched?: MatchAiAnalysisRow | null,
 ): Promise<FullMatchScorecardData> {
-  const players = await loadPlayersForPersisted(persisted);
-  return enrichScorecardWithAiAnalysis(data, persisted, players);
+  return enrichScorecardWithAiAnalysis(
+    data,
+    persisted,
+    players,
+    aiRowPrefetched,
+  );
 }
 
 /**
@@ -284,7 +305,7 @@ export const loadFullMatchScorecardData = cache(
 export const loadMatchScorecardPage = cache(
   async (
   shareSlug: string,
-  isAdmin: boolean,
+  isAdminArg?: boolean,
 ): Promise<MatchScorecardPageLoadResult> => {
   const supabase = createServiceRoleClient();
   const { data: matchRow, error: matchError } = await supabase
@@ -310,22 +331,28 @@ export const loadMatchScorecardPage = cache(
     return { status: "not_ready" };
   }
 
-  if (
-    !canShowFullMatchScorecardPage(
-      {
-        status: match.status,
-        is_public_scorecard: match.is_public_scorecard,
-        is_public_live: match.is_public_live,
-      },
-      { isAdmin },
-    )
-  ) {
-    return { status: "forbidden" };
-  }
-
   try {
-    const persisted = await fetchPersistedScorecardRows(match.id);
+    const [isAdmin, persisted] = await Promise.all([
+      isAdminArg !== undefined
+        ? Promise.resolve(isAdminArg)
+        : getServerSession().then((s) => s.admin),
+      fetchPersistedScorecardRows(match.id),
+    ]);
+
     if (!persisted) return { status: "error" };
+
+    if (
+      !canShowFullMatchScorecardPage(
+        {
+          status: match.status,
+          is_public_scorecard: match.is_public_scorecard,
+          is_public_live: match.is_public_live,
+        },
+        { isAdmin },
+      )
+    ) {
+      return { status: "forbidden" };
+    }
 
     if (
       persistedScorecardDataIncomplete(
@@ -348,14 +375,17 @@ export const loadMatchScorecardPage = cache(
         innings: persisted.innings,
         deliveryRows: persisted.deliveryRows,
       });
-      const players = await loadPlayersForPersisted(persisted);
+      const [players, aiRow] = await Promise.all([
+        loadPlayersForPersisted(persisted),
+        fetchMatchAiAnalysisRow(match.id),
+      ]);
       const core = await getCachedCompletedScorecardCore(
         match,
         persisted,
         shareSlug,
         players,
       );
-      data = await attachFreshAiAnalysis(core, persisted);
+      data = await attachFreshAiAnalysis(core, persisted, players, aiRow);
     } else {
       data = await buildScorecardFromPersistedFetch(match, persisted);
     }

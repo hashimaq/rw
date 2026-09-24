@@ -36,6 +36,11 @@ export function LiveScoreScreen({
   status,
   bootstrap,
 }: LiveScoreScreenProps) {
+  const [displayStatus, setDisplayStatus] = useState(status);
+  useEffect(() => {
+    setDisplayStatus(status);
+  }, [status]);
+
   const session = useScoringSessionStatus(slug, matchId);
   const {
     clearRequesterNotice,
@@ -77,8 +82,8 @@ export function LiveScoreScreen({
     };
   }, []);
 
-  const live = status === "live";
-  const completed = status === "completed";
+  const live = displayStatus === "live";
+  const completed = displayStatus === "completed";
   const isController = session.scoring_role === "controller";
   const isOnline = !offline;
   const backfill = usePendingDeliveryBackfill(
@@ -152,7 +157,7 @@ export function LiveScoreScreen({
                   matchId={matchId}
                   matchNumber={matchNumber}
                   opponentName={opponentName}
-                  status={status}
+                  status={displayStatus}
                   onSuccessToast={showSuccessToast}
                   onErrorToast={showErrorToast}
                 />
@@ -204,6 +209,7 @@ export function LiveScoreScreen({
         <BallScoringPanel
           bootstrap={resolvedBootstrap}
           isController={isController}
+          onMatchStatusChange={setDisplayStatus}
         />
       ) : (
         <div className="m-4 rounded-2xl border border-[var(--rw-border)] p-6 text-center">

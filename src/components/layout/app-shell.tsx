@@ -1,15 +1,16 @@
-import { getServerSession } from "@/lib/auth/server-session";
-import { AppHeader } from "@/components/layout/app-header";
+import { Suspense } from "react";
+import { AppHeaderFallback } from "@/components/layout/app-header-fallback";
+import { AppHeaderShell } from "@/components/layout/app-header-shell";
 import { AppProviders } from "@/components/layout/app-providers";
 import { MobileTabBar } from "@/components/layout/mobile-tab-bar";
 
-export async function AppShell({ children }: { children: React.ReactNode }) {
-  const { user, admin } = await getServerSession();
-
+export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <AppProviders>
       <div className="rw-app-bg flex min-h-full flex-col text-[var(--rw-text)]">
-        <AppHeader isAdmin={admin} isSignedIn={Boolean(user)} />
+        <Suspense fallback={<AppHeaderFallback />}>
+          <AppHeaderShell />
+        </Suspense>
         <main className="mx-auto w-full max-w-6xl flex-1 px-4 pb-24 pt-6 sm:px-6 lg:pb-10">
           {children}
         </main>

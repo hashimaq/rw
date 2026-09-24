@@ -42,10 +42,17 @@ export async function loadScoringBootstrap(
     inningsRows.find((i) => i.innings_status === "not_started") ??
     inningsRows[inningsRows.length - 1];
 
-  const { data: squadRows } = await supabase
-    .from("match_squads")
-    .select("player_id, squad_status, is_captain, is_wicketkeeper")
-    .eq("match_id", match.id);
+  const [{ data: squadRows }, { data: deliveryRows }] = await Promise.all([
+    supabase
+      .from("match_squads")
+      .select("player_id, squad_status, is_captain, is_wicketkeeper")
+      .eq("match_id", match.id),
+    supabase
+      .from("deliveries")
+      .select("*")
+      .eq("innings_id", active.id)
+      .order("sequence_in_innings", { ascending: true }),
+  ]);
 
   const playerIds = [...new Set((squadRows ?? []).map((r) => r.player_id))];
   const { data: players } = await supabase
@@ -80,12 +87,6 @@ export async function loadScoringBootstrap(
       };
     })
     .filter((p): p is SquadPlayerOption => p != null);
-
-  const { data: deliveryRows } = await supabase
-    .from("deliveries")
-    .select("*")
-    .eq("innings_id", active.id)
-    .order("sequence_in_innings", { ascending: true });
 
   const deliveries = ((deliveryRows ?? []) as Delivery[]).map(deliveryRowToInput);
 
