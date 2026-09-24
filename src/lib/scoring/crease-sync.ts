@@ -42,13 +42,10 @@ export function authoritativeCreaseRefs(
       nonStriker: pending.nonStriker,
     };
   }
-  if (pending.striker && pending.nonStriker) {
-    return {
-      striker: pending.striker ?? fromEngine.striker,
-      nonStriker: pending.nonStriker ?? fromEngine.nonStriker,
-    };
-  }
-  return fromEngine;
+  return {
+    striker: fromEngine.striker,
+    nonStriker: fromEngine.nonStriker,
+  };
 }
 
 export type WicketReplacementSlot = "striker" | "non_striker" | null;

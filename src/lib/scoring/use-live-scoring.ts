@@ -27,7 +27,6 @@ import {
   buildWicketDelivery,
   lastBowlerKey,
   liveSummary,
-  undoLastDelivery,
   type ActiveParticipants,
   type DeliveryInput,
   type InningsScoreState,
@@ -94,6 +93,7 @@ import {
   type InningsDeliveryBuilder,
 } from "@/lib/scoring/commit-innings-delivery";
 import { isCreaseCorrectionDelivery } from "@/lib/scoring/scoring-meta-delivery";
+import { undoLastScorerEvents } from "@/lib/scoring/undo-scorer-events";
 import { useInningsDeliveriesRealtime } from "@/lib/scoring/use-innings-deliveries-realtime";
 
 function activeCreaseHooks(
@@ -837,20 +837,22 @@ export function useLiveScoring(
   const undo = useCallback(() => {
     const current = stateRef.current;
     if (!isController || current.deliveries.length === 0) return;
-    const last = current.deliveries[current.deliveries.length - 1];
-    const next = undoLastDelivery(current);
-    if (!next) return;
+    const result = undoLastScorerEvents(current);
+    if (!result) return;
+    const { next, removed } = result;
     stateRef.current = next;
     setState(next);
     applyUiFromEngine(next);
 
     void (async () => {
-      await undoDeliveryLocal(last.clientEventId);
-      try {
-        const push = await createApiUndoPusher();
-        await push(last.clientEventId);
-      } catch {
-        /* local undo still applied */
+      for (const delivery of removed) {
+        await undoDeliveryLocal(delivery.clientEventId);
+        try {
+          const push = await createApiUndoPusher();
+          await push(delivery.clientEventId);
+        } catch {
+          /* local undo still applied */
+        }
       }
       void refreshSyncStats();
       void runFlush();

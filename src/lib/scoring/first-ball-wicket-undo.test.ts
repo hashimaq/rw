@@ -17,6 +17,7 @@ import {
   participantRefsFromEngineState,
   scoringUiSnapshotFromEngineState,
 } from "@/lib/scoring/scoring-phase";
+import { undoLastScorerEvents } from "@/lib/scoring/undo-scorer-events";
 
 const A = "11111111-1111-4111-8111-111111111111";
 const B = "22222222-2222-4222-8222-222222222222";
@@ -98,7 +99,7 @@ describe("first-ball wicket undo (authoritative history)", () => {
     expectPreFirstBallCrease(undone);
   });
 
-  it("wicket + replacement + undo wicket restores A/B (two undos)", () => {
+  it("wicket + replacement + single scorer undo restores pre-wicket crease", () => {
     let s = inningsReadyForFirstBall();
     s = applyDeliveryToState(
       s,
@@ -123,11 +124,9 @@ describe("first-ball wicket undo (authoritative history)", () => {
     expect(s.strikerKey).toBe(cKey);
     expect(deriveScoringPhase(s, ctx)).toBe("scoring");
 
-    s = undoLastDelivery(s)!;
-    expect(deriveScoringPhase(s, ctx)).toBe("need_batter");
-
-    s = undoLastDelivery(s)!;
-    expectPreFirstBallCrease(s);
+    const result = undoLastScorerEvents(s)!;
+    expect(result.removed).toHaveLength(2);
+    expectPreFirstBallCrease(result.next);
   });
 
   it("wicket after prior ball undo restores pre-wicket crease", () => {

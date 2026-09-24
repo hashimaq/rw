@@ -12,6 +12,7 @@ import {
 } from "@/lib/scoring-engine/innings-live";
 import type { DeliveryInput, InningsScoreState } from "@/lib/scoring-engine/types";
 import type { CreaseDisplayBatter } from "@/lib/scoring/crease-sync";
+import { liveCreaseBatterForEnd } from "@/lib/scoring/live-crease-display";
 import type { ParticipantRef } from "@/lib/scoring/participant";
 import { economy, strikeRate } from "@/lib/scoring-engine/utils";
 import { groupDeliveriesByOver } from "@/lib/scorecard/group-deliveries-by-over";
@@ -404,19 +405,23 @@ function BatterBowlerTables({
   const onStrikeKey = strikerKey;
   const offStrikeKey = nonStrikerKey;
 
-  const onStrikeBatter =
-    onStrikeKey && state.batters[onStrikeKey]
-      ? creaseFromKey(state, onStrikeKey, true)
-      : pendingStriker
-        ? pendingCreaseRow(pendingStriker.name)
-        : crease.striker;
+  const onStrikeBatter = liveCreaseBatterForEnd(
+    state,
+    "striker",
+    crease,
+    pendingStriker?.name ?? null,
+    creaseFromKey,
+    pendingCreaseRow,
+  );
 
-  const offStrikeBatter =
-    offStrikeKey && state.batters[offStrikeKey]
-      ? creaseFromKey(state, offStrikeKey, false)
-      : pendingNonStriker
-        ? pendingCreaseRow(pendingNonStriker.name)
-        : crease.nonStriker;
+  const offStrikeBatter = liveCreaseBatterForEnd(
+    state,
+    "non_striker",
+    crease,
+    pendingNonStriker?.name ?? null,
+    creaseFromKey,
+    pendingCreaseRow,
+  );
 
   const batterEnds = [
     {
