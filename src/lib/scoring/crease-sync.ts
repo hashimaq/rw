@@ -50,6 +50,21 @@ export function authoritativeCreaseRefs(
 
 export type WicketReplacementSlot = "striker" | "non_striker" | null;
 
+/** The single not-out batter at the crease during need_batter (end-of-over swap safe). */
+export function soleActiveBatterAtCrease(
+  state: InningsScoreState,
+): ParticipantRef | null {
+  let found: ParticipantRef | null = null;
+  for (const key of [state.strikerKey, state.nonStrikerKey]) {
+    if (!key) continue;
+    const ref = batterRefFromKey(state, key);
+    if (!ref) continue;
+    if (found) return null;
+    found = ref;
+  }
+  return found;
+}
+
 export function wicketReplacementSlotFromDelivery(
   state: InningsScoreState,
   dismissedPlayerId: string | null,

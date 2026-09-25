@@ -58,6 +58,7 @@ export function AppHeader({ isAdmin, isSignedIn }: AppHeaderProps) {
                 <Link
                   key={item.href}
                   href={item.href}
+                  prefetch
                   className={cn(
                     "rw-focus-ring rounded-full px-3 py-2 text-sm font-medium transition-colors",
                     active
@@ -129,6 +130,7 @@ export function AppHeader({ isAdmin, isSignedIn }: AppHeaderProps) {
                   <Link
                     key={item.href}
                     href={item.href}
+                    prefetch
                     className={cn(
                       "rw-focus-ring rounded-xl px-4 py-3 text-sm font-medium transition-colors",
                       active

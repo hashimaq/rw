@@ -59,6 +59,7 @@ const rich: FullMatchScorecardData = {
         battingFigures: [
           {
             name: "Opener With A Very Long Name For Layout",
+            playerId: null,
             runs: 20,
             balls: 12,
             fours: 2,
@@ -72,6 +73,7 @@ const rich: FullMatchScorecardData = {
         bowlingFigures: [
           {
             name: "Kashif",
+            playerId: null,
             overs: "3.0",
             maidens: 0,
             runs: 30,
@@ -118,6 +120,7 @@ const rich: FullMatchScorecardData = {
         battingFigures: [
           {
             name: "Hashim",
+            playerId: null,
             runs: 32,
             balls: 18,
             fours: 4,

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ScoringBootstrap } from "@/lib/data/scoring-bootstrap-types";
 import {
   loadScoringBootstrapCacheBySlug,
@@ -17,6 +17,7 @@ import { ScorerPinUtility } from "@/components/scoring/scorer-pin-utility";
 import { usePendingDeliveryBackfill } from "@/lib/scoring/use-pending-delivery-backfill";
 import { useScoringSessionStatus } from "@/lib/scoring/use-scoring-session-status";
 import { cn } from "@/lib/utils/cn";
+import { useDeliveryCommentaryPlayback } from "@/lib/commentary/use-delivery-commentary-playback";
 
 interface LiveScoreScreenProps {
   slug: string;
@@ -117,6 +118,40 @@ export function LiveScoreScreen({
     setToast({ message, variant: "error" });
     window.setTimeout(() => setToast(null), 5000);
   }, []);
+
+  /** Frozen when innings loads — must not advance on every re-render (skips current ball). */
+  const commentaryBaselineRef = useRef<{
+    inningsId: string;
+    minSequence: number;
+  } | null>(null);
+  const activeInningsId = resolvedBootstrap?.activeInningsId ?? null;
+  if (
+    activeInningsId &&
+    resolvedBootstrap &&
+    commentaryBaselineRef.current?.inningsId !== activeInningsId
+  ) {
+    const minSequence =
+      resolvedBootstrap.deliveries.length > 0
+        ? Math.max(
+            ...resolvedBootstrap.deliveries.map((d) => d.sequenceInInnings),
+          ) + 1
+        : 1;
+    commentaryBaselineRef.current = {
+      inningsId: activeInningsId,
+      minSequence,
+    };
+  }
+  const commentaryMinSequence =
+    commentaryBaselineRef.current?.inningsId === activeInningsId
+      ? commentaryBaselineRef.current.minSequence
+      : 1;
+
+  useDeliveryCommentaryPlayback({
+    matchId,
+    inningsId: resolvedBootstrap?.activeInningsId ?? null,
+    enabled: live && Boolean(resolvedBootstrap?.activeInningsId),
+    minSequenceInInnings: commentaryMinSequence,
+  });
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-lg flex-col bg-[var(--rw-bg)] text-[var(--rw-text)]">

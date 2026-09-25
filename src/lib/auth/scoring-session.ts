@@ -1,7 +1,11 @@
 import "server-only";
 import { cookies } from "next/headers";
+import { assertInstalledScoringSurface } from "@/lib/auth/assert-installed-scoring-surface";
+import { ScoringAuthorizationError } from "@/lib/auth/scoring-authorization-error";
 import { verifySessionToken } from "@/lib/auth/scorer-pin";
 import { createServiceRoleClient } from "@/lib/supabase/admin";
+
+export { ScoringAuthorizationError } from "@/lib/auth/scoring-authorization-error";
 
 export const SCORER_SESSION_COOKIE = "rw_scorer_session";
 
@@ -10,19 +14,6 @@ export interface ScorerSessionContext {
   matchId: string;
   token: string;
   isScoringController: boolean;
-}
-
-export class ScoringAuthorizationError extends Error {
-  readonly code: "not_scoring_controller" | "session_required" | "session_invalid";
-
-  constructor(
-    message: string,
-    code: ScoringAuthorizationError["code"],
-  ) {
-    super(message);
-    this.name = "ScoringAuthorizationError";
-    this.code = code;
-  }
 }
 
 export function parseScorerSessionCookie(
@@ -37,6 +28,7 @@ export function parseScorerSessionCookie(
 export async function requireActiveScorerSession(
   expectedMatchId?: string,
 ): Promise<ScorerSessionContext & { matchId: string }> {
+  await assertInstalledScoringSurface();
   const cookieStore = await cookies();
   const raw = cookieStore.get(SCORER_SESSION_COOKIE)?.value;
   const parsed = parseScorerSessionCookie(raw);

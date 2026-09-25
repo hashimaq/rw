@@ -53,6 +53,7 @@ function minimalScorecard(): FullMatchScorecardData {
           battingFigures: [
             {
               name: "Hashim",
+              playerId: null,
               runs: 32,
               balls: 18,
               fours: 4,

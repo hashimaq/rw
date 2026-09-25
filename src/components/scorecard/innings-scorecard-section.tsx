@@ -33,6 +33,7 @@ function mapBattingRows(doc: ScorecardInningsDocument) {
       return {
         key: `dnb-${b.name}-${i}`,
         name: b.name,
+        playerId: b.playerId,
         dismissal: "Did not bat",
         runs: "",
         balls: "",
@@ -45,6 +46,7 @@ function mapBattingRows(doc: ScorecardInningsDocument) {
     return {
       key: `${b.name}-${b.runs}-${b.balls}`,
       name: `${b.name}${b.isNotOut ? " *" : ""}`,
+      playerId: b.playerId,
       dismissal: dismissalCell(b.isNotOut, b.dismissal),
       runs: String(b.runs),
       balls: String(b.balls),
@@ -66,6 +68,7 @@ function mapBowlingRows(doc: ScorecardInningsDocument) {
   return doc.bowlingFigures.map((b) => ({
     key: b.name,
     name: b.name,
+    playerId: b.playerId,
     overs: b.overs,
     maidens: String(b.maidens),
     runs: String(b.runs),

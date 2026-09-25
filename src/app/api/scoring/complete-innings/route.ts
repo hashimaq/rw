@@ -133,6 +133,7 @@ export async function POST(request: Request) {
     if (matchMeta?.share_slug) {
       if (matchCompleted) {
         revalidateTag(CACHE_TAGS.completedScorecards, "max");
+        revalidateTag(CACHE_TAGS.careerStatistics, "max");
       }
       revalidatePath(`/match/${matchMeta.share_slug}`);
     }

@@ -151,6 +151,10 @@ describe("buildFullMatchScorecard", () => {
     expect(doc.wickets).toBe(engine.wickets);
     expect(doc.extras).toBe(engine.extras);
     expect(doc.battingFigures.length).toBeGreaterThan(0);
+    expect(doc.battingFigures.some((b) => b.playerId === RW)).toBe(true);
+    expect(doc.bowlingFigures.some((b) => b.playerId != null || b.name.length > 0)).toBe(
+      true,
+    );
     expect(doc.bowlingFigures[0]!.wickets).toBe(1);
     expect(doc.bowlingFigures[0]!.wides).toBe(0);
     expect(doc.bowlingFigures[0]!.noBalls).toBe(0);

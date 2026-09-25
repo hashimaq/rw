@@ -46,10 +46,10 @@ export function deriveScoringPhase(
     if (ctx.inningsStatus === "completed") return "innings_saved";
     return "innings_complete";
   }
-  if (needsBowlerChange(state)) return "need_bowler";
   if (activeBattersAtCrease(state) < 2 && state.wickets < 10) {
     return "need_batter";
   }
+  if (needsBowlerChange(state)) return "need_bowler";
   return "scoring";
 }
 
@@ -58,13 +58,25 @@ export function wicketReplacementSlotFromEngineState(
   state: InningsScoreState,
 ): WicketReplacementSlot {
   if (activeBattersAtCrease(state) >= 2 || state.wickets >= 10) return null;
+
   const last = state.deliveries[state.deliveries.length - 1];
-  if (!last?.isWicket || last.wicketType === "retired") return null;
-  return wicketReplacementSlotFromDelivery(
-    state,
-    last.dismissedPlayerId,
-    last.dismissedPlayerName,
-  );
+  if (last?.isWicket && last.wicketType !== "retired") {
+    return wicketReplacementSlotFromDelivery(
+      state,
+      last.dismissedPlayerId,
+      last.dismissedPlayerName,
+    );
+  }
+
+  if (state.strikerKey) {
+    const s = state.batters[state.strikerKey];
+    if (s?.isOut) return "striker";
+  }
+  if (state.nonStrikerKey) {
+    const ns = state.batters[state.nonStrikerKey];
+    if (ns?.isOut) return "non_striker";
+  }
+  return null;
 }
 
 function bowlerRefFromEngineState(

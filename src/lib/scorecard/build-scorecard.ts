@@ -113,6 +113,7 @@ function buildInningsDocument(
     ),
     bowlingFigures: bowlingOrder(state).map((b) => ({
       name: b.name,
+      playerId: b.playerId,
       overs: oversFromLegalBalls(b.legalBalls),
       maidens: b.maidens,
       runs: b.runsConceded,

@@ -39,6 +39,7 @@ export default async function PlayersIndexPage() {
             <li key={player.id}>
               <Link
                 href={`/players/${player.id}`}
+                prefetch
                 className="rw-focus-ring block rounded-2xl border border-[var(--rw-border)] bg-[var(--rw-surface)] p-4"
               >
                 <p className="font-semibold">{player.full_name}</p>

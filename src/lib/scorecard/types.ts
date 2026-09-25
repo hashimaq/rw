@@ -47,6 +47,8 @@ export interface ScorecardInningsDocument {
   target: number | null;
   battingFigures: Array<{
     name: string;
+    /** Persistent player id when known from squad/deliveries; null for unnamed opponents. */
+    playerId: string | null;
     runs: number;
     balls: number;
     fours: number;
@@ -60,6 +62,7 @@ export interface ScorecardInningsDocument {
   }>;
   bowlingFigures: Array<{
     name: string;
+    playerId: string | null;
     overs: string;
     maidens: number;
     runs: number;

@@ -61,6 +61,7 @@ function inningsBuilt(
       target: null,
       battingFigures: batters.map((b) => ({
         name: b.name,
+        playerId: null,
         runs: b.runs,
         balls: b.balls,
         fours: b.fours,
@@ -72,6 +73,7 @@ function inningsBuilt(
       })),
       bowlingFigures: bowlers.map((b) => ({
         name: b.name,
+        playerId: null,
         overs: b.overs,
         maidens: 0,
         runs: b.runs,

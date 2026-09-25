@@ -5,9 +5,12 @@ import {
   Geist,
   Geist_Mono,
 } from "next/font/google";
+import { InstallAppBanner } from "@/components/pwa/install-app-banner";
 import { InstallFirstGate } from "@/components/pwa/install-first-gate";
 import { PwaProvider } from "@/components/pwa/pwa-provider";
+import { ThemeInitScript } from "@/components/theme/theme-init-script";
 import { ThemeProvider } from "@/components/theme/theme-provider";
+import { BRAND_LOGO_SRC } from "@/lib/brand/logo-src";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -48,8 +51,8 @@ export const metadata: Metadata = {
     statusBarStyle: "default",
   },
   icons: {
-    icon: [{ url: "/brand/rw-logo.jpg", type: "image/jpeg" }],
-    apple: [{ url: "/brand/rw-logo.jpg", type: "image/jpeg" }],
+    icon: [{ url: BRAND_LOGO_SRC, type: "image/jpeg" }],
+    apple: [{ url: BRAND_LOGO_SRC, type: "image/jpeg" }],
   },
 };
 
@@ -71,9 +74,13 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${geistSans.variable} ${geistMono.variable} ${rwDisplay.variable} ${rwSlogan.variable} h-full`}
     >
       <body className="min-h-full antialiased transition-colors duration-300">
+        <ThemeInitScript />
         <ThemeProvider>
           <PwaProvider>
-            <InstallFirstGate>{children}</InstallFirstGate>
+            <InstallFirstGate>
+              {children}
+              <InstallAppBanner />
+            </InstallFirstGate>
           </PwaProvider>
         </ThemeProvider>
       </body>

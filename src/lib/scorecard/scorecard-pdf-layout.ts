@@ -6,8 +6,10 @@ import type {
   ScorecardInningsDocument,
 } from "@/lib/scorecard/types";
 
-/** Official asset (source: RW LOGO.jpg). */
-export const SCORECARD_PDF_LOGO_SRC = "/brand/rw-logo.jpg";
+import { BRAND_LOGO_SRC } from "@/lib/brand/logo-src";
+
+/** Official asset for scorecard PDF header. */
+export const SCORECARD_PDF_LOGO_SRC = BRAND_LOGO_SRC;
 
 const RW_PRIMARY = "#c01818";
 const HEADER_BG = "#1a1a1a";

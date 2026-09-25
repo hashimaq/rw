@@ -222,6 +222,25 @@ export interface Delivery {
   created_at: string;
 }
 
+export type DeliveryCommentaryStatus =
+  | "pending"
+  | "processing"
+  | "ready"
+  | "failed";
+
+export interface DeliveryCommentaryRow {
+  client_event_id: string;
+  match_id: string;
+  innings_id: string;
+  sequence_in_innings: number;
+  status: DeliveryCommentaryStatus;
+  commentary_text: string | null;
+  audio_storage_path: string | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface InningsRow {
   id: string;
   match_id: string;
@@ -399,6 +418,21 @@ export interface Database {
           fielder_name?: string | null;
           notes?: string | null;
           created_at?: string;
+        }
+      >;
+      delivery_commentary: TableDef<
+        DeliveryCommentaryRow,
+        {
+          client_event_id: string;
+          match_id: string;
+          innings_id: string;
+          sequence_in_innings: number;
+          status?: DeliveryCommentaryStatus;
+          commentary_text?: string | null;
+          audio_storage_path?: string | null;
+          error_message?: string | null;
+          created_at?: string;
+          updated_at?: string;
         }
       >;
       scoring_sessions: TableDef<

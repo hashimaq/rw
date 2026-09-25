@@ -1,4 +1,5 @@
 import type { MetadataRoute } from "next";
+import { BRAND_LOGO_SRC } from "@/lib/brand/logo-src";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
@@ -11,23 +12,23 @@ export default function manifest(): MetadataRoute.Manifest {
     scope: "/",
     display: "standalone",
     orientation: "portrait",
-    background_color: "#0f1218",
+    background_color: "#f3f4f8",
     theme_color: "#b91c1c",
     icons: [
       {
-        src: "/brand/rw-logo.jpg",
+        src: BRAND_LOGO_SRC,
         sizes: "512x512",
         type: "image/jpeg",
         purpose: "any",
       },
       {
-        src: "/brand/rw-logo.jpg",
+        src: BRAND_LOGO_SRC,
         sizes: "192x192",
         type: "image/jpeg",
         purpose: "any",
       },
       {
-        src: "/brand/rw-logo.jpg",
+        src: BRAND_LOGO_SRC,
         sizes: "512x512",
         type: "image/jpeg",
         purpose: "maskable",

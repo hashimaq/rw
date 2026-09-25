@@ -143,6 +143,7 @@ function rowFromBatter(
 ): BattingFigure {
   return {
     name: b.name,
+    playerId: b.playerId,
     runs: b.runs,
     balls: b.balls,
     fours: b.fours,
@@ -158,6 +159,7 @@ function rowFromBatter(
 function didNotBatRow(m: ScorecardXiMember): BattingFigure {
   return {
     name: displayName(m),
+    playerId: m.playerId,
     runs: 0,
     balls: 0,
     fours: 0,

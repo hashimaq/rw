@@ -1,3 +1,4 @@
+import { ScorecardPlayerLink } from "@/components/scorecard/scorecard-player-link";
 import { cn } from "@/lib/utils/cn";
 
 /**
@@ -35,6 +36,7 @@ function StatHeadRow({
 export interface TemplateBattingRow {
   key: string;
   name: string;
+  playerId?: string | null;
   dismissal: string;
   runs: string;
   balls: string;
@@ -69,7 +71,9 @@ export function ScorecardBattingTable({ rows }: { rows: TemplateBattingRow[] }) 
           >
             <div className="min-w-0">
               <p className="break-words text-[13px] font-bold leading-snug text-[var(--rw-text)] sm:text-sm">
-                {row.name}
+                <ScorecardPlayerLink playerId={row.playerId}>
+                  {row.name}
+                </ScorecardPlayerLink>
               </p>
               <p className="mt-0.5 break-words text-[11px] italic leading-snug text-[var(--rw-muted)] sm:text-[12px]">
                 {row.dismissal}
@@ -112,6 +116,7 @@ export function ScorecardBattingTable({ rows }: { rows: TemplateBattingRow[] }) 
 export interface TemplateBowlingRow {
   key: string;
   name: string;
+  playerId?: string | null;
   overs: string;
   maidens: string;
   runs: string;
@@ -157,7 +162,9 @@ export function ScorecardBowlingTable({ rows }: { rows: TemplateBowlingRow[] }) 
             >
               <div className="min-w-0">
                 <p className="break-words text-[13px] font-bold leading-snug sm:text-sm">
-                  {row.name}
+                  <ScorecardPlayerLink playerId={row.playerId}>
+                    {row.name}
+                  </ScorecardPlayerLink>
                 </p>
                 {extraBowling ? (
                   <p className="mt-0.5 text-[10px] text-[var(--rw-muted)] sm:text-[11px]">

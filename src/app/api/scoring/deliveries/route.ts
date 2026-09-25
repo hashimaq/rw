@@ -1,5 +1,8 @@
+import { after } from "next/server";
 import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
+import { scheduleDeliveryCommentaryForDelivery } from "@/lib/commentary/run-delivery-commentary";
+import { shouldGenerateDeliveryCommentary } from "@/lib/commentary/should-generate-commentary";
 import {
   requireScoringControllerSession,
   ScoringAuthorizationError,
@@ -11,6 +14,7 @@ import {
 } from "@/lib/scoring/validate-incoming-delivery";
 import { sanitizeDeliveryPlayerIds } from "@/lib/scoring/sanitize-delivery-player-ids";
 import { deliveryInputSchema } from "@/lib/validation/delivery";
+import { upsertDeliveryIdempotentWithRecovery } from "@/lib/scoring/upsert-delivery-idempotent";
 import { createServiceRoleClient } from "@/lib/supabase/admin";
 
 async function knownPlayerIdsForMatch(
@@ -93,45 +97,28 @@ export async function POST(request: Request) {
       );
     }
 
-    const { data, error } = await supabase.rpc("upsert_delivery_idempotent", {
-      p_client_event_id: persistPayload.client_event_id,
-      p_innings_id: persistPayload.innings_id,
-      p_sequence_in_innings: persistPayload.sequence_in_innings,
-      p_over_number: persistPayload.over_number,
-      p_ball_number: persistPayload.ball_number,
-      p_striker_player_id: persistPayload.striker_player_id ?? null,
-      p_striker_name: persistPayload.striker_name,
-      p_non_striker_player_id: persistPayload.non_striker_player_id ?? null,
-      p_non_striker_name: persistPayload.non_striker_name,
-      p_bowler_player_id: persistPayload.bowler_player_id ?? null,
-      p_bowler_name: persistPayload.bowler_name,
-      p_batter_runs: persistPayload.batter_runs,
-      p_total_runs: persistPayload.total_runs,
-      p_extras_runs: persistPayload.extras_runs,
-      p_extra_type: persistPayload.extra_type,
-      p_is_legal_delivery: persistPayload.is_legal_delivery,
-      p_is_boundary: persistPayload.is_boundary,
-      p_is_six: persistPayload.is_six,
-      p_is_wicket: persistPayload.is_wicket,
-      p_wicket_type: persistPayload.wicket_type,
-      p_dismissed_player_id: persistPayload.dismissed_player_id ?? null,
-      p_dismissed_player_name: persistPayload.dismissed_player_name ?? null,
-      p_fielder_player_id: persistPayload.fielder_player_id ?? null,
-      p_fielder_name: persistPayload.fielder_name ?? null,
-      p_notes: persistPayload.notes ?? null,
-    });
+    const upsert = await upsertDeliveryIdempotentWithRecovery(
+      supabase,
+      persistPayload,
+    );
 
-    if (error) {
+    if (!upsert.ok) {
       console.error(
         "[deliveries] upsert_delivery_idempotent:",
-        error.code,
-        error.message,
+        upsert.code,
+        upsert.message,
       );
       return NextResponse.json(
-        { error: error.message, code: error.code ?? "rpc_error" },
-        { status: 500 },
+        {
+          error: upsert.message,
+          code: upsert.code,
+          occupant_client_event_id: upsert.occupantClientEventId ?? undefined,
+        },
+        { status: upsert.status },
       );
     }
+
+    const data = upsert.deliveryId;
 
     const { data: matchRow } = await supabase
       .from("matches")
@@ -143,6 +130,20 @@ export async function POST(request: Request) {
       typeof matchRow.share_slug === "string"
     ) {
       revalidatePath(`/match/${matchRow.share_slug}`);
+    }
+
+    if (shouldGenerateDeliveryCommentary(persistPayload)) {
+      const deliveryCommittedAtMs = Date.now();
+      after(() => {
+        void scheduleDeliveryCommentaryForDelivery({
+          matchId: session.matchId,
+          payload: persistPayload,
+          existingRows: existingRows ?? [],
+          oversLimit: innings.overs_limit,
+          target: innings.target,
+          deliveryCommittedAtMs,
+        });
+      });
     }
 
     return NextResponse.json({ delivery_id: data });

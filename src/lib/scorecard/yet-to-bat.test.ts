@@ -22,7 +22,7 @@ function doc(
     },
     runRate: 5,
     target: null,
-    battingFigures: [{ name: "Hashim", runs: 50, balls: 40, fours: 5, sixes: 1, strikeRate: 125, dismissal: null, isNotOut: true, isGuest: false }],
+    battingFigures: [{ name: "Hashim", playerId: null, runs: 50, balls: 40, fours: 5, sixes: 1, strikeRate: 125, dismissal: null, isNotOut: true, isGuest: false }],
     bowlingFigures: [],
     fallOfWickets: [],
     partnerships: [],

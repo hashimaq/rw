@@ -46,6 +46,22 @@ describe("production hardening — delivery lifecycle invariants", () => {
     expect(src).toContain("persistDeliveryInBackground");
     expect(src).toMatch(/commitParticipantsMeta[\s\S]*persistDeliveryInBackground/);
   });
+
+  it("server skips consecutive-over validation for crease correction sync", () => {
+    const src = readFileSync(
+      join(root, "lib/scoring/validate-incoming-delivery.ts"),
+      "utf8",
+    );
+    expect(src).toContain("deliveryRequiresConsecutiveOverCheck");
+  });
+
+  it("schedules controller commentary before waiting on delivery sync", () => {
+    const src = readFileSync(join(root, "lib/scoring/use-live-scoring.ts"), "utf8");
+    expect(src).toContain("startControllerCommentaryFastPath");
+    expect(src).toMatch(
+      /startControllerCommentaryFastPath[\s\S]*recordDeliveryLocalFirst/,
+    );
+  });
 });
 
 describe("production hardening — match completion session", () => {

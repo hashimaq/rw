@@ -86,7 +86,7 @@ describe("opponent bowler history & rotation", () => {
     expect(validateConsecutiveOverBowler(s, null, "Ahmed")).toBeNull();
   });
 
-  it("server rejects consecutive-over crease correction bowler", () => {
+  it("server allows consecutive-over bowler on crease correction sync", () => {
     const ali: ActiveParticipants = {
       strikerPlayerId: A,
       strikerName: "A",
@@ -98,7 +98,7 @@ describe("opponent bowler history & rotation", () => {
     let s = over(createEmptyInningsState(20), ali, "o1");
     const incoming = buildCreaseCorrectionDelivery(s, ali, "pick-same");
     const err = validateIncomingDeliveryAgainstState(s, incoming);
-    expect(err).toMatch(/consecutive/i);
+    expect(err).toBeNull();
   });
 
   it("Usman via crease correction then next delivery uses Usman", () => {

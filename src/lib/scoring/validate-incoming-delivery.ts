@@ -2,12 +2,16 @@ import { deliveryRowToInput } from "@/lib/mappers/delivery";
 import type { Delivery } from "@/lib/database/types";
 import { buildInningsStateFromDeliveries } from "@/lib/scoring-engine";
 import type { DeliveryInput } from "@/lib/scoring-engine/types";
+import { deliveryRequiresConsecutiveOverCheck } from "@/lib/scoring/delivery-bowler-validation";
 import { validateConsecutiveOverBowler } from "@/lib/scoring/bowler-consecutive-overs";
 
 export function validateIncomingDeliveryAgainstState(
   stateBefore: ReturnType<typeof buildInningsStateFromDeliveries>,
   incoming: DeliveryInput,
 ): string | null {
+  if (!deliveryRequiresConsecutiveOverCheck(incoming)) {
+    return null;
+  }
   return validateConsecutiveOverBowler(
     stateBefore,
     incoming.bowlerPlayerId,

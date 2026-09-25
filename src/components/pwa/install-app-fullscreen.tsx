@@ -5,8 +5,7 @@ import { useEffect, useState } from "react";
 import { usePwaInstallOptional } from "@/components/pwa/pwa-provider";
 import { cn } from "@/lib/utils/cn";
 
-/** Official Red Wings logo served from public (source: RW LOGO.jpg). */
-const RW_LOGO_SRC = "/brand/rw-logo.jpg";
+import { BRAND_LOGO_SRC } from "@/lib/brand/logo-src";
 
 function InstallIcon({ className }: { className?: string }) {
   return (
@@ -88,7 +87,7 @@ export function InstallAppFullScreen() {
         <div className="flex w-full min-w-0 flex-col items-center text-center">
           <div className="relative mb-6 h-32 w-32 shrink-0 overflow-hidden rounded-3xl border-2 border-red-600/50 shadow-[0_0_48px_rgba(185,28,28,0.4)] sm:h-36 sm:w-36">
             <Image
-              src={RW_LOGO_SRC}
+              src={BRAND_LOGO_SRC}
               alt="Red Wings Cricket"
               fill
               className="object-cover"

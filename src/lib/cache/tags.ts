@@ -3,4 +3,5 @@ export const CACHE_TAGS = {
   matches: "matches",
   adminAudit: "admin-audit",
   completedScorecards: "completed-scorecards",
+  careerStatistics: "career-statistics",
 } as const;

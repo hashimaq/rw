@@ -6,6 +6,11 @@ import {
   deliverySyncFailureOutcome,
   isNonRetryableSyncError,
 } from "@/lib/sync/delivery-sync-outcome";
+import { dedupeSyncQueueBySequence } from "@/lib/sync/dedupe-sync-queue-by-sequence";
+import {
+  isSequenceConflictSyncError,
+  sequenceConflictError,
+} from "@/lib/sync/delivery-sync-sequence-conflict";
 import { sortSyncQueueItems } from "@/lib/sync/sort-sync-queue";
 
 export { isNonRetryableSyncError } from "@/lib/sync/delivery-sync-outcome";
@@ -163,10 +168,76 @@ async function flushSyncQueueInner(
   push: (payload: DeliveryInputPayload) => Promise<void>,
   options: FlushSyncQueueOptions = {},
 ) {
-  const pending = sortSyncQueueItems(await loadPendingSyncItems(options.matchId));
+  const pending = dedupeSyncQueueBySequence(
+    await loadPendingSyncItems(options.matchId),
+  );
 
   for (const item of pending) {
     await dbSyncOneItem(item, push);
+  }
+}
+
+async function abandonStaleSyncQueueItem(item: SyncQueueItem): Promise<void> {
+  const db = getLocalDb();
+  await db.syncQueue.delete(item.id!);
+  await db.deliveries
+    .where("client_event_id")
+    .equals(item.client_event_id)
+    .delete();
+}
+
+/** Drop pending duplicates at these sequences after undo (other client_event_ids). */
+export async function purgeStalePendingDeliveriesAtSequences(
+  matchId: string,
+  inningsId: string,
+  sequences: number[],
+  keepClientEventIds: ReadonlySet<string>,
+): Promise<void> {
+  if (sequences.length === 0) return;
+  const db = getLocalDb();
+  const seqSet = new Set(sequences);
+  const stale = await db.syncQueue
+    .where("match_id")
+    .equals(matchId)
+    .filter(
+      (row) =>
+        row.innings_id === inningsId &&
+        row.status === "pending" &&
+        seqSet.has(row.payload.sequence_in_innings) &&
+        !keepClientEventIds.has(row.client_event_id),
+    )
+    .toArray();
+  for (const row of stale) {
+    await db.syncQueue.delete(row.id!);
+    await db.deliveries
+      .where("client_event_id")
+      .equals(row.client_event_id)
+      .delete();
+  }
+}
+
+async function discardSupersededPendingAtSameSequence(
+  synced: SyncQueueItem,
+): Promise<void> {
+  const db = getLocalDb();
+  const stale = await db.syncQueue
+    .where("match_id")
+    .equals(synced.match_id)
+    .filter(
+      (row) =>
+        row.status === "pending" &&
+        row.innings_id === synced.innings_id &&
+        row.payload.sequence_in_innings ===
+          synced.payload.sequence_in_innings &&
+        row.client_event_id !== synced.client_event_id,
+    )
+    .toArray();
+  for (const row of stale) {
+    await db.syncQueue.delete(row.id!);
+    await db.deliveries
+      .where("client_event_id")
+      .equals(row.client_event_id)
+      .delete();
   }
 }
 
@@ -184,6 +255,7 @@ async function dbSyncOneItem(
   });
   try {
     await push(item.payload);
+    await discardSupersededPendingAtSameSequence(item);
     await db.syncQueue.update(item.id!, {
       status: "synced",
       updated_at: now(),
@@ -194,6 +266,10 @@ async function dbSyncOneItem(
       .modify({ synced: true });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Sync failed";
+    if (isSequenceConflictSyncError(message)) {
+      await abandonStaleSyncQueueItem(item);
+      return;
+    }
     const outcome = deliverySyncFailureOutcome(message);
     await db.syncQueue.update(item.id!, {
       status: outcome.status,
@@ -238,6 +314,9 @@ export async function createApiDeliveryPusher() {
         throw new Error(
           `${detail} (re-enter scorer PIN on this device, then reopen scoring)`,
         );
+      }
+      if (code === "sequence_conflict") {
+        throw sequenceConflictError(detail);
       }
       throw new Error(detail);
     }

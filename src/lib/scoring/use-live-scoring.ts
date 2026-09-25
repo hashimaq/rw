@@ -37,6 +37,7 @@ import {
   flushSyncQueueUntilIdle,
   recordDeliveryLocalFirst,
 } from "@/lib/sync/delivery-sync";
+import { purgeStalePendingDeliveriesAtSequences } from "@/lib/sync/delivery-sync";
 import { createApiUndoPusher, undoDeliveryLocal } from "@/lib/sync/undo-delivery";
 import type { WicketType } from "@/lib/database/types";
 import {
@@ -56,6 +57,7 @@ export type { ParticipantRef } from "@/lib/scoring/participant";
 import {
   authoritativeCreaseRefs,
   deriveCreaseDisplay,
+  soleActiveBatterAtCrease,
   syncCreaseRefsFromEngineState,
 } from "@/lib/scoring/crease-sync";
 import { opponentBatterNamesFromDeliveries } from "@/lib/scoring/opponent-batters";
@@ -74,6 +76,7 @@ import {
 } from "@/lib/scoring/derive-match-result";
 import { participantKey } from "@/lib/scoring-engine/utils";
 
+import { allowDeliveryAgainstConsecutiveOverRule } from "@/lib/scoring/delivery-bowler-validation";
 import { validateConsecutiveOverBowler } from "@/lib/scoring/bowler-consecutive-overs";
 import { mergeDeliveries } from "@/lib/scoring/merge-deliveries";
 import { saveScoringBootstrapCache } from "@/lib/local-db/scoring-bootstrap-cache";
@@ -94,6 +97,18 @@ import {
 import { isCreaseCorrectionDelivery } from "@/lib/scoring/scoring-meta-delivery";
 import { undoLastScorerEvents } from "@/lib/scoring/undo-scorer-events";
 import { useInningsDeliveriesRealtime } from "@/lib/scoring/use-innings-deliveries-realtime";
+import {
+  configureCommentaryPlaybackBaseline,
+  notifyLocalScoringDeliveryCommitted,
+  unlockDeliveryCommentaryAudio,
+} from "@/lib/commentary/delivery-commentary-audio-queue";
+import {
+  deliveryCommittedAtForClientEvent,
+  registerLocalDeliveryCommit,
+} from "@/lib/commentary/commentary-latency-client";
+import { mergeCommentaryPlaybackBaselineFloor } from "@/lib/commentary/commentary-playback-session";
+import { startControllerCommentaryFastPath } from "@/lib/commentary/controller-commentary-fast-path";
+import { shouldGenerateDeliveryCommentary } from "@/lib/commentary/should-generate-commentary";
 
 function activeCreaseHooks(
   state: InningsScoreState,
@@ -486,6 +501,15 @@ export function useLiveScoring(
         if (rebuilt.deliveries.length > 0) {
           applyUiFromEngine(rebuilt);
           inningsStartedRef.current = true;
+          const maxSeq = Math.max(
+            ...rebuilt.deliveries.map((d) => d.sequenceInInnings),
+          );
+          const floor = maxSeq + 1;
+          mergeCommentaryPlaybackBaselineFloor(floor);
+          configureCommentaryPlaybackBaseline({
+            inningsId,
+            minSequenceInInnings: floor,
+          });
         } else {
           setPhase("setup_openers");
         }
@@ -524,8 +548,8 @@ export function useLiveScoring(
   const persistDeliveryInBackground = useCallback(
     (delivery: DeliveryInput) => {
       void (async () => {
+        const payload = deliveryInputToPayload(inningsId, delivery);
         try {
-          const payload = deliveryInputToPayload(inningsId, delivery);
           await recordDeliveryLocalFirst(bootstrap.matchId, payload);
         } catch {
           /* local queue / retry */
@@ -561,12 +585,7 @@ export function useLiveScoring(
         base,
         clientEventId,
         buildDelivery,
-        (b, delivery) =>
-          !validateConsecutiveOverBowler(
-            b,
-            delivery.bowlerPlayerId,
-            delivery.bowlerName,
-          ),
+        allowDeliveryAgainstConsecutiveOverRule,
       );
 
       if (!result.delivery || result.skippedDuplicate) return false;
@@ -598,12 +617,7 @@ export function useLiveScoring(
         base,
         clientEventId,
         buildDelivery,
-        (b, delivery) =>
-          !validateConsecutiveOverBowler(
-            b,
-            delivery.bowlerPlayerId,
-            delivery.bowlerName,
-          ),
+        allowDeliveryAgainstConsecutiveOverRule,
       );
 
       stateRef.current = result.next;
@@ -631,6 +645,21 @@ export function useLiveScoring(
         setPhase(snap.phase);
       }
 
+      const committedAt = Date.now();
+      registerLocalDeliveryCommit(
+        clientEventId,
+        committedAt,
+        result.delivery.sequenceInInnings,
+      );
+      notifyLocalScoringDeliveryCommitted(result.delivery.sequenceInInnings);
+      unlockDeliveryCommentaryAudio();
+      const payload = deliveryInputToPayload(inningsId, result.delivery);
+      if (shouldGenerateDeliveryCommentary(payload)) {
+        startControllerCommentaryFastPath({
+          payload,
+          deliveryCommittedAtMs: committedAt,
+        });
+      }
       persistDeliveryInBackground(result.delivery);
       return true;
     },
@@ -850,10 +879,26 @@ export function useLiveScoring(
           /* local undo still applied */
         }
       }
-      void refreshSyncStats();
-      void runFlush();
+      const keepIds = new Set(
+        stateRef.current.deliveries.map((d) => d.clientEventId),
+      );
+      await purgeStalePendingDeliveriesAtSequences(
+        bootstrap.matchId,
+        inningsId,
+        removed.map((d) => d.sequenceInInnings),
+        keepIds,
+      );
+      await refreshSyncStats();
+      await runFlush();
     })();
-  }, [isController, applyUiFromEngine, refreshSyncStats, runFlush]);
+  }, [
+    isController,
+    applyUiFromEngine,
+    refreshSyncStats,
+    runFlush,
+    bootstrap.matchId,
+    inningsId,
+  ]);
 
   const canSelectManualStriker = useMemo(() => {
     if (!isController || phase !== "scoring") return false;
@@ -890,9 +935,6 @@ export function useLiveScoring(
       );
       if (err) return;
 
-      setBowler(b);
-      setPhase("scoring");
-
       const crease = authoritativeCreaseRefs(stateRef.current, {
         striker,
         nonStriker,
@@ -919,9 +961,6 @@ export function useLiveScoring(
       const err = validateConsecutiveOverBowler(stateRef.current, null, trimmed);
       if (err) return;
       const bowlerRef = createOpponentBowler(trimmed);
-
-      setBowler(bowlerRef);
-      setPhase("scoring");
 
       const crease = authoritativeCreaseRefs(stateRef.current, {
         striker,
@@ -953,48 +992,32 @@ export function useLiveScoring(
         return [...prev, createOpponentParticipant(trimmed)];
       });
       const batter = createOpponentParticipant(trimmed);
-      const slot = wicketReplacementSlotFromEngineState(stateRef.current);
-      const engine = syncCreaseRefsFromEngineState(stateRef.current);
+      const state = stateRef.current;
+      const slot = wicketReplacementSlotFromEngineState(state);
+      const survivor = soleActiveBatterAtCrease(state);
+      if (!slot || !survivor) return;
       if (slot === "striker") {
-        const ns = engine.nonStriker ?? nonStriker;
-        if (!ns) return;
-        setStriker(batter);
-        setNonStriker(ns);
-        setPhase("scoring");
-        commitCreaseCorrection(batter, ns);
-      } else if (slot === "non_striker") {
-        const s = engine.striker ?? striker;
-        if (!s) return;
-        setStriker(s);
-        setNonStriker(batter);
-        setPhase("scoring");
-        commitCreaseCorrection(s, batter);
+        commitCreaseCorrection(batter, survivor);
+      } else {
+        commitCreaseCorrection(survivor, batter);
       }
     },
-    [commitCreaseCorrection, nonStriker, striker],
+    [commitCreaseCorrection],
   );
 
   const confirmNewBatter = useCallback(
     (batter: ParticipantRef) => {
-      const slot = wicketReplacementSlotFromEngineState(stateRef.current);
-      const engine = syncCreaseRefsFromEngineState(stateRef.current);
+      const state = stateRef.current;
+      const slot = wicketReplacementSlotFromEngineState(state);
+      const survivor = soleActiveBatterAtCrease(state);
+      if (!slot || !survivor) return;
       if (slot === "striker") {
-        const ns = engine.nonStriker ?? nonStriker;
-        if (!ns) return;
-        setStriker(batter);
-        setNonStriker(ns);
-        setPhase("scoring");
-        commitCreaseCorrection(batter, ns);
-      } else if (slot === "non_striker") {
-        const s = engine.striker ?? striker;
-        if (!s) return;
-        setStriker(s);
-        setNonStriker(batter);
-        setPhase("scoring");
-        commitCreaseCorrection(s, batter);
+        commitCreaseCorrection(batter, survivor);
+      } else {
+        commitCreaseCorrection(survivor, batter);
       }
     },
-    [commitCreaseCorrection, nonStriker, striker],
+    [commitCreaseCorrection],
   );
 
   const createMatchGuestPlayer = useCallback(async (fullName: string) => {

@@ -17,6 +17,7 @@ import {
   resolveInstallPromptMode,
   type InstallPromptMode,
 } from "@/lib/pwa/install-first-gate";
+import { syncScoringSurfaceCookie } from "@/lib/pwa/scoring-surface-cookie";
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -54,7 +55,9 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
   const bypass = isBrowserAppBypassAllowed();
 
   useEffect(() => {
-    setStandalone(isStandaloneDisplayMode());
+    const mode = isStandaloneDisplayMode();
+    setStandalone(mode);
+    syncScoringSurfaceCookie(mode);
     setHydrated(true);
 
     const onBeforeInstall = (e: Event) => {
@@ -64,8 +67,13 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
     const onInstalled = () => {
       setDeferredPrompt(null);
       setStandalone(true);
+      syncScoringSurfaceCookie(true);
     };
-    const onDisplayMode = () => setStandalone(isStandaloneDisplayMode());
+    const onDisplayMode = () => {
+      const next = isStandaloneDisplayMode();
+      setStandalone(next);
+      syncScoringSurfaceCookie(next);
+    };
 
     window.addEventListener("beforeinstallprompt", onBeforeInstall);
     window.addEventListener("appinstalled", onInstalled);

@@ -76,6 +76,7 @@ export async function POST(request: Request) {
     scheduleMatchAiAnalysis(match.id);
     if (match.share_slug) {
       revalidateTag(CACHE_TAGS.completedScorecards, "max");
+      revalidateTag(CACHE_TAGS.careerStatistics, "max");
       revalidatePath(`/match/${match.share_slug}`);
     }
 

@@ -13,6 +13,7 @@ export interface PlayerCareerStats {
   ballsFaced: number;
   fours: number;
   sixes: number;
+  ducks: number;
   oversBowled: number;
   maidens: number;
   runsConceded: number;
@@ -39,6 +40,7 @@ export function emptyPlayerCareerStats(playerId: string): PlayerCareerStats {
     ballsFaced: 0,
     fours: 0,
     sixes: 0,
+    ducks: 0,
     oversBowled: 0,
     maidens: 0,
     runsConceded: 0,

@@ -5,6 +5,7 @@ import { CACHE_TAGS } from "@/lib/cache/tags";
 export function revalidateAfterMatchDelete(snapshot: MatchDeleteSnapshot): void {
   revalidateTag(CACHE_TAGS.matches, "max");
   revalidateTag(CACHE_TAGS.completedScorecards, "max");
+  revalidateTag(CACHE_TAGS.careerStatistics, "max");
   revalidateTag(CACHE_TAGS.adminAudit, "max");
   revalidateTag(CACHE_TAGS.players, "max");
   revalidatePath("/admin");

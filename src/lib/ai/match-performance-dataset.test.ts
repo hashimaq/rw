@@ -52,6 +52,7 @@ function minimalScorecard(): FullMatchScorecardData {
           battingFigures: [
             {
               name: "Hashim",
+              playerId: null,
               runs: 32,
               balls: 6,
               fours: 5,
@@ -63,6 +64,7 @@ function minimalScorecard(): FullMatchScorecardData {
             },
             {
               name: "Bench",
+              playerId: null,
               runs: 0,
               balls: 0,
               fours: 0,
@@ -77,6 +79,7 @@ function minimalScorecard(): FullMatchScorecardData {
           bowlingFigures: [
             {
               name: "Kashif",
+              playerId: null,
               overs: "1.2",
               maidens: 0,
               runs: 30,

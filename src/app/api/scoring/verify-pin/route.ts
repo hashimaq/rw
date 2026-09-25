@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { assertInstalledScoringSurface } from "@/lib/auth/assert-installed-scoring-surface";
+import { ScoringAuthorizationError } from "@/lib/auth/scoring-authorization-error";
 import { verifyScorerPin } from "@/lib/auth/scorer-pin";
 import { requireActiveScorerSession } from "@/lib/auth/scoring-session";
 import { findActiveControllerSession } from "@/lib/scoring/control";
@@ -50,6 +52,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Incorrect scorer PIN" }, { status: 401 });
     }
 
+    await assertInstalledScoringSurface();
+
     const controller = await findActiveControllerSession(supabase, body.match_id);
 
     let isScoringController = !controller;
@@ -94,6 +98,14 @@ export async function POST(request: Request) {
 
     return applyScorerSessionCookie(response, sessionId, token);
   } catch (err) {
+    if (err instanceof ScoringAuthorizationError) {
+      const status =
+        err.code === "installed_app_required" ||
+        err.code === "not_scoring_controller"
+          ? 403
+          : 401;
+      return NextResponse.json({ error: err.message, code: err.code }, { status });
+    }
     const message = err instanceof Error ? err.message : "Invalid request";
     return NextResponse.json({ error: message }, { status: 400 });
   }

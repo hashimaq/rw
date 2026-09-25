@@ -17,7 +17,7 @@ export function CompletedScorecardListItem({
   return (
     <li className="min-w-0">
       <article className="rw-card rw-card-interactive overflow-hidden p-4 sm:p-5">
-        <Link href={href} className="rw-focus-ring block min-w-0 space-y-2">
+        <Link href={href} prefetch className="rw-focus-ring block min-w-0 space-y-2">
           <p className="text-xs font-semibold uppercase tracking-wide text-[var(--rw-muted)]">
             Red Wings vs {summary.opponentName}
           </p>
@@ -44,6 +44,7 @@ export function CompletedScorecardListItem({
         </Link>
         <Link
           href={href}
+          prefetch
           className="rw-focus-ring rw-btn-secondary mt-4 inline-block min-h-11 w-full text-center sm:w-auto sm:min-w-[10rem]"
         >
           View Scorecard
