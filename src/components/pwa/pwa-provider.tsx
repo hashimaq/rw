@@ -24,6 +24,11 @@ type BeforeInstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 };
 
+function isAndroidDevice(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return /android/i.test(navigator.userAgent);
+}
+
 interface PwaInstallContextValue {
   /** Normal app routes are accessible. */
   appUnlocked: boolean;
@@ -52,12 +57,18 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
   const [standalone, setStandalone] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const [ios] = useState(() => isIosDevice());
+  const [android] = useState(() => isAndroidDevice());
   const bypass = isBrowserAppBypassAllowed();
 
+  const refreshStandalone = useCallback(() => {
+    const next = isStandaloneDisplayMode();
+    setStandalone(next);
+    syncScoringSurfaceCookie(next);
+    return next;
+  }, []);
+
   useEffect(() => {
-    const mode = isStandaloneDisplayMode();
-    setStandalone(mode);
-    syncScoringSurfaceCookie(mode);
+    refreshStandalone();
     setHydrated(true);
 
     const onBeforeInstall = (e: Event) => {
@@ -66,29 +77,30 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
     };
     const onInstalled = () => {
       setDeferredPrompt(null);
-      setStandalone(true);
-      syncScoringSurfaceCookie(true);
+      refreshStandalone();
     };
     const onDisplayMode = () => {
-      const next = isStandaloneDisplayMode();
-      setStandalone(next);
-      syncScoringSurfaceCookie(next);
+      refreshStandalone();
     };
 
     window.addEventListener("beforeinstallprompt", onBeforeInstall);
     window.addEventListener("appinstalled", onInstalled);
-    window
-      .matchMedia("(display-mode: standalone)")
-      .addEventListener("change", onDisplayMode);
+    const mqs = [
+      window.matchMedia("(display-mode: standalone)"),
+      window.matchMedia("(display-mode: fullscreen)"),
+    ];
+    for (const mq of mqs) {
+      mq.addEventListener("change", onDisplayMode);
+    }
 
     return () => {
       window.removeEventListener("beforeinstallprompt", onBeforeInstall);
       window.removeEventListener("appinstalled", onInstalled);
-      window
-        .matchMedia("(display-mode: standalone)")
-        .removeEventListener("change", onDisplayMode);
+      for (const mq of mqs) {
+        mq.removeEventListener("change", onDisplayMode);
+      }
     };
-  }, []);
+  }, [refreshStandalone]);
 
   useEffect(() => {
     if ("serviceWorker" in navigator && process.env.NODE_ENV === "production") {
@@ -108,8 +120,9 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
       resolveInstallPromptMode({
         hasDeferredPrompt: Boolean(deferredPrompt),
         isIos: ios,
+        isAndroid: android,
       }),
-    [deferredPrompt, ios],
+    [deferredPrompt, ios, android],
   );
 
   const triggerInstall = useCallback(async () => {
@@ -117,11 +130,9 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
     await deferredPrompt.prompt();
     const choice = await deferredPrompt.userChoice;
     setDeferredPrompt(null);
-    if (choice.outcome === "accepted") {
-      setStandalone(isStandaloneDisplayMode());
-    }
+    refreshStandalone();
     return choice.outcome;
-  }, [deferredPrompt]);
+  }, [deferredPrompt, refreshStandalone]);
 
   const value = useMemo(
     (): PwaInstallContextValue => ({

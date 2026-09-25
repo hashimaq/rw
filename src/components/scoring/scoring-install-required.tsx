@@ -13,8 +13,8 @@ export function ScoringInstallRequired({ slug }: { slug: string }) {
           Install Red Wings Cricket to use Scoring
         </h1>
         <p className="mt-2 text-sm text-[var(--rw-muted)]">
-          You can watch live matches and scorecards in the browser. Ball-by-ball
-          scoring runs only in the installed app (not a normal browser tab).
+          Ball-by-ball scoring is available only in the installed Red Wings
+          Cricket app.
         </p>
       </div>
 

@@ -622,3 +622,20 @@ body {
     animation: none;
   }
 }
+
+/* PWA-only: hide app shell until standalone or React install gate mounts */
+html[data-rw-install-gate="pending"] #rw-app-root {
+  visibility: hidden;
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+}
+
+html[data-rw-install-gate="pending"] #rw-install-gate-static {
+  display: flex;
+}
+
+html:not([data-rw-install-gate="pending"]) #rw-install-gate-static {
+  display: none;
+}

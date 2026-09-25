@@ -48,6 +48,10 @@ export function InstallAppFullScreen() {
   const [installing, setInstalling] = useState(false);
 
   useEffect(() => {
+    document.documentElement.classList.remove("dark");
+    document.documentElement.style.colorScheme = "light";
+    document.documentElement.removeAttribute("data-rw-install-gate");
+
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
@@ -57,10 +61,11 @@ export function InstallAppFullScreen() {
 
   if (!pwa) return null;
 
-  const { installPromptMode, canNativeInstall } = pwa;
+  const { installPromptMode, canNativeInstall, hydrated } = pwa;
   const showNativeCta = canNativeInstall && installPromptMode === "native_prompt";
   const showIosGuide = installPromptMode === "ios_manual";
-  const showManualGuide = installPromptMode === "manual_unsupported";
+  const showAndroidGuide = installPromptMode === "android_manual";
+  const showDesktopGuide = installPromptMode === "manual_unsupported";
 
   const onInstall = async () => {
     if (!canNativeInstall) return;
@@ -74,18 +79,18 @@ export function InstallAppFullScreen() {
 
   return (
     <div
-      className="flex min-h-dvh min-w-0 flex-col overflow-x-hidden overflow-y-auto bg-[#0a0c10] text-white"
+      className="fixed inset-0 z-[10000] flex min-h-dvh min-w-0 flex-col overflow-x-hidden overflow-y-auto bg-[#f3f4f8] text-[#0f1218]"
       role="main"
       aria-labelledby="rw-install-title"
     >
-      <div className="pointer-events-none fixed inset-0 opacity-90" aria-hidden>
-        <div className="absolute -left-1/4 top-0 h-[55vh] w-[70vw] max-w-full rounded-full bg-red-700/25 blur-3xl" />
-        <div className="absolute -right-1/4 bottom-0 h-[45vh] w-[65vw] max-w-full rounded-full bg-red-900/20 blur-3xl" />
+      <div className="pointer-events-none fixed inset-0 opacity-80" aria-hidden>
+        <div className="absolute -left-1/4 top-0 h-[50vh] w-[70vw] max-w-full rounded-full bg-red-200/50 blur-3xl" />
+        <div className="absolute -right-1/4 bottom-0 h-[40vh] w-[65vw] max-w-full rounded-full bg-red-100/60 blur-3xl" />
       </div>
 
       <div className="relative mx-auto flex w-full min-w-0 max-w-lg flex-1 flex-col justify-center px-5 py-[max(1.25rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:px-8">
         <div className="flex w-full min-w-0 flex-col items-center text-center">
-          <div className="relative mb-6 h-32 w-32 shrink-0 overflow-hidden rounded-3xl border-2 border-red-600/50 shadow-[0_0_48px_rgba(185,28,28,0.4)] sm:h-36 sm:w-36">
+          <div className="relative mb-6 h-32 w-32 shrink-0 overflow-hidden rounded-3xl border-2 border-red-200 shadow-[0_8px_32px_rgba(185,28,28,0.2)] sm:h-36 sm:w-36">
             <Image
               src={BRAND_LOGO_SRC}
               alt="Red Wings Cricket"
@@ -95,22 +100,18 @@ export function InstallAppFullScreen() {
               sizes="144px"
             />
           </div>
-          <p className="font-[family-name:var(--font-rw-display)] text-4xl tracking-[0.14em] text-white sm:text-5xl">
-            RED WINGS
-          </p>
-          <p className="mt-2 font-[family-name:var(--font-rw-slogan)] text-lg italic text-red-300/95 sm:text-xl">
-            PLAY BOLD. STAND UNITED.
+          <p className="font-[family-name:var(--font-rw-display)] text-4xl tracking-[0.14em] text-[#b91c1c] sm:text-5xl">
+            RED WINGS CRICKET
           </p>
           <h1
             id="rw-install-title"
-            className="mt-5 font-[family-name:var(--font-rw-display)] text-3xl tracking-wide text-white sm:text-4xl"
+            className="mt-6 font-[family-name:var(--font-rw-display)] text-2xl tracking-wide text-[#0f1218] sm:text-3xl"
           >
-            INSTALL RED WINGS APP
+            Install the Red Wings app to continue
           </h1>
-          <p className="mt-4 max-w-sm text-pretty text-sm leading-relaxed text-zinc-400 sm:text-base">
-            Install the Red Wings Cricket App for the complete experience —
-            live scoring, scorecards, and offline match-day scoring on your
-            device.
+          <p className="mt-4 max-w-sm text-pretty text-sm leading-relaxed text-zinc-600 sm:text-base">
+            Red Wings is designed to run as an installed app for the complete
+            experience.
           </p>
         </div>
 
@@ -120,69 +121,72 @@ export function InstallAppFullScreen() {
               type="button"
               disabled={installing}
               className={cn(
-                "rw-focus-ring flex w-full min-h-[4rem] items-center justify-center gap-3 rounded-2xl",
-                "bg-gradient-to-b from-red-500 to-red-700 text-lg font-bold uppercase tracking-wide text-white",
-                "shadow-[0_8px_32px_rgba(185,28,28,0.45)] active:scale-[0.98] disabled:opacity-70",
-                "sm:min-h-[4.5rem] sm:text-xl",
+                "rw-focus-ring flex w-full min-h-[3rem] items-center justify-center gap-3 rounded-2xl",
+                "bg-gradient-to-b from-red-600 to-red-700 text-lg font-bold uppercase tracking-wide text-white",
+                "shadow-[0_8px_28px_rgba(185,28,28,0.35)] active:scale-[0.98] disabled:opacity-70",
+                "sm:min-h-[3.25rem] sm:text-xl",
               )}
               onClick={() => void onInstall()}
             >
-              <InstallIcon className="h-8 w-8 shrink-0" />
+              <InstallIcon className="h-7 w-7 shrink-0" />
               {installing ? "Opening install…" : "Install App"}
             </button>
           ) : null}
 
           {showIosGuide ? (
-            <div className="w-full min-w-0 space-y-4 rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-5">
-              <p className="text-center text-base font-semibold text-zinc-100">
+            <div className="w-full min-w-0 space-y-3 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm sm:p-5">
+              <p className="text-center text-base font-semibold text-[#0f1218]">
                 Add Red Wings to your Home Screen
               </p>
-              <ol className="space-y-3 text-sm text-zinc-300">
+              <ol className="space-y-3 text-sm text-zinc-700">
                 <li className="flex min-w-0 items-start gap-3">
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-600/30 text-red-200">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-700">
                     <ShareIcon className="h-5 w-5" />
                   </span>
-                  <span className="pt-2 text-left">
-                    Tap the Safari <strong>Share</strong> button
+                  <span className="pt-2.5 text-left">
+                    Tap <strong>Share</strong> → <strong>Add to Home Screen</strong>
                   </span>
                 </li>
                 <li className="flex min-w-0 items-start gap-3">
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-600/30 text-xs font-bold text-red-100">
-                    +
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-50 text-xs font-bold text-red-700">
+                    ✓
                   </span>
-                  <span className="pt-2 text-left">
-                    Select <strong>Add to Home Screen</strong>
-                  </span>
-                </li>
-                <li className="flex min-w-0 items-start gap-3">
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-600/30 text-xs font-bold text-red-100">
-                    4
-                  </span>
-                  <span className="pt-2 text-left">
-                    Tap <strong>Add</strong>, then open Red Wings from your Home
-                    Screen
+                  <span className="pt-2.5 text-left">
+                    Open <strong>Red Wings Cricket</strong> from your Home Screen
+                    to continue
                   </span>
                 </li>
               </ol>
             </div>
           ) : null}
 
-          {showManualGuide ? (
-            <div className="w-full min-w-0 rounded-2xl border border-amber-500/25 bg-amber-500/5 p-4 text-sm leading-relaxed text-zinc-300 sm:p-5">
-              <p className="mb-2 font-semibold text-zinc-100">
-                Install from a supported browser
+          {showAndroidGuide ? (
+            <div className="w-full min-w-0 rounded-2xl border border-zinc-200 bg-white p-4 text-sm leading-relaxed text-zinc-700 shadow-sm sm:p-5">
+              <p className="mb-2 font-semibold text-[#0f1218]">
+                Install from Chrome
               </p>
               <p>
-                This browser cannot install Red Wings directly. Open this link
-                in <strong>Chrome</strong> or <strong>Edge</strong> on Android
-                or desktop, then use the browser menu →{" "}
-                <strong>Install app</strong>. Red Wings is available only as an
-                installed application.
+                Use your browser&apos;s <strong>Install app</strong> or{" "}
+                <strong>Add to Home screen</strong> option (menu or address bar),
+                then open Red Wings from your home screen.
               </p>
             </div>
           ) : null}
 
-          {!showNativeCta && !showIosGuide && !showManualGuide ? (
+          {showDesktopGuide ? (
+            <div className="w-full min-w-0 rounded-2xl border border-zinc-200 bg-white p-4 text-sm leading-relaxed text-zinc-700 shadow-sm sm:p-5">
+              <p className="mb-2 font-semibold text-[#0f1218]">
+                Install from your browser
+              </p>
+              <p>
+                Use the browser&apos;s <strong>Install app</strong> option in the
+                address bar or menu, then launch Red Wings from your installed
+                apps.
+              </p>
+            </div>
+          ) : null}
+
+          {!hydrated && !showNativeCta && !showIosGuide && !showAndroidGuide && !showDesktopGuide ? (
             <p className="text-center text-sm text-zinc-500">
               Checking install availability…
             </p>

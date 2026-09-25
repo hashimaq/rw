@@ -1,13 +1,16 @@
 import type { Metadata, Viewport } from "next";
+import { Suspense } from "react";
 import {
   Bebas_Neue,
   Cormorant_Garamond,
   Geist,
   Geist_Mono,
 } from "next/font/google";
-import { InstallAppBanner } from "@/components/pwa/install-app-banner";
 import { InstallFirstGate } from "@/components/pwa/install-first-gate";
+import { PwaDeepLinkRestore } from "@/components/pwa/pwa-deep-link-restore";
+import { PwaGateInitScript } from "@/components/pwa/pwa-gate-init-script";
 import { PwaProvider } from "@/components/pwa/pwa-provider";
+import { PwaStaticInstallShell } from "@/components/pwa/pwa-static-install-shell";
 import { ThemeInitScript } from "@/components/theme/theme-init-script";
 import { ThemeProvider } from "@/components/theme/theme-provider";
 import { BRAND_LOGO_SRC } from "@/lib/brand/logo-src";
@@ -75,14 +78,18 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="min-h-full antialiased transition-colors duration-300">
         <ThemeInitScript />
-        <ThemeProvider>
-          <PwaProvider>
-            <InstallFirstGate>
-              {children}
-              <InstallAppBanner />
-            </InstallFirstGate>
-          </PwaProvider>
-        </ThemeProvider>
+        <PwaGateInitScript />
+        <PwaStaticInstallShell />
+        <div id="rw-app-root">
+          <ThemeProvider>
+            <PwaProvider>
+              <Suspense fallback={null}>
+                <PwaDeepLinkRestore />
+              </Suspense>
+              <InstallFirstGate>{children}</InstallFirstGate>
+            </PwaProvider>
+          </ThemeProvider>
+        </div>
       </body>
     </html>
   );
