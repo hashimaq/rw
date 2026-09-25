@@ -25,6 +25,9 @@ export function PwaStaticInstallShell() {
       <p className="mt-3 max-w-xs text-center text-sm text-zinc-600">
         Install the Red Wings app to continue
       </p>
+      <p className="mt-6 min-h-[3.25rem] w-full max-w-sm rounded-2xl bg-gradient-to-b from-red-600 to-red-700 px-4 py-3 text-center text-lg font-bold uppercase tracking-wide text-white shadow-md">
+        INSTALL APP
+      </p>
     </div>
   );
 }

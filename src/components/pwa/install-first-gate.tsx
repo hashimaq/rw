@@ -6,6 +6,7 @@ import { isInstallFirstGateEnabled } from "@/lib/pwa/install-first-gate";
 
 /**
  * PWA-only gate: normal browser tabs see only the full-screen install experience.
+ * App route children are not mounted until standalone/unlocked.
  */
 export function InstallFirstGate({ children }: { children: React.ReactNode }) {
   const pwa = usePwaInstallOptional();
@@ -14,7 +15,7 @@ export function InstallFirstGate({ children }: { children: React.ReactNode }) {
     return children;
   }
 
-  if (!pwa || !pwa.appUnlocked) {
+  if (!pwa?.appUnlocked) {
     return <InstallAppFullScreen />;
   }
 

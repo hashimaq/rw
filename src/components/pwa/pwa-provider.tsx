@@ -17,6 +17,7 @@ import {
   resolveInstallPromptMode,
   type InstallPromptMode,
 } from "@/lib/pwa/install-first-gate";
+import { isRedWingsAlreadyInstalledOnDevice } from "@/lib/pwa/detect-installed-pwa";
 import { syncScoringSurfaceCookie } from "@/lib/pwa/scoring-surface-cookie";
 
 type BeforeInstallPromptEvent = Event & {
@@ -30,9 +31,10 @@ function isAndroidDevice(): boolean {
 }
 
 interface PwaInstallContextValue {
-  /** Normal app routes are accessible. */
   appUnlocked: boolean;
   standalone: boolean;
+  /** PWA on device but user is in a normal browser tab — no install CTA. */
+  alreadyInstalledOnDevice: boolean;
   installPromptMode: InstallPromptMode;
   canNativeInstall: boolean;
   triggerInstall: () => Promise<"accepted" | "dismissed" | "unavailable">;
@@ -54,7 +56,15 @@ export function usePwaInstall() {
 export function PwaProvider({ children }: { children: React.ReactNode }) {
   const [deferredPrompt, setDeferredPrompt] =
     useState<BeforeInstallPromptEvent | null>(null);
-  const [standalone, setStandalone] = useState(false);
+  const [standalone, setStandalone] = useState(() => {
+    const mode = isStandaloneDisplayMode();
+    if (mode) {
+      syncScoringSurfaceCookie(true);
+    }
+    return mode;
+  });
+  const [alreadyInstalledOnDevice, setAlreadyInstalledOnDevice] =
+    useState(false);
   const [hydrated, setHydrated] = useState(false);
   const [ios] = useState(() => isIosDevice());
   const [android] = useState(() => isAndroidDevice());
@@ -64,19 +74,30 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
     const next = isStandaloneDisplayMode();
     setStandalone(next);
     syncScoringSurfaceCookie(next);
+    if (next) {
+      document.documentElement.removeAttribute("data-rw-install-gate");
+    }
     return next;
   }, []);
 
   useEffect(() => {
-    refreshStandalone();
+    if (refreshStandalone()) {
+      setHydrated(true);
+      return;
+    }
+
     setHydrated(true);
 
+    void isRedWingsAlreadyInstalledOnDevice().then(setAlreadyInstalledOnDevice);
+
     const onBeforeInstall = (e: Event) => {
+      if (isStandaloneDisplayMode()) return;
       e.preventDefault();
       setDeferredPrompt(e as BeforeInstallPromptEvent);
     };
     const onInstalled = () => {
       setDeferredPrompt(null);
+      setAlreadyInstalledOnDevice(true);
       refreshStandalone();
     };
     const onDisplayMode = () => {
@@ -103,51 +124,82 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
   }, [refreshStandalone]);
 
   useEffect(() => {
-    if ("serviceWorker" in navigator && process.env.NODE_ENV === "production") {
-      void navigator.serviceWorker.register("/sw.js").catch(() => {
+    if (!("serviceWorker" in navigator) || process.env.NODE_ENV !== "production") {
+      return;
+    }
+    void navigator.serviceWorker
+      .register("/sw.js")
+      .then((registration) => {
+        void registration.update();
+        registration.addEventListener("updatefound", () => {
+          const worker = registration.installing;
+          if (!worker) return;
+          worker.addEventListener("statechange", () => {
+            if (
+              worker.state === "activated" &&
+              isStandaloneDisplayMode()
+            ) {
+              /* New SW active — next navigation uses fresh assets (network-first HTML). */
+            }
+          });
+        });
+      })
+      .catch(() => {
         /* optional */
       });
-    }
   }, []);
 
-  const appUnlocked = isRedWingsAppUnlocked(
-    standalone,
-    !isInstallFirstGateEnabled() || bypass,
-  );
+  const appUnlocked = isRedWingsAppUnlocked(standalone, bypass);
 
-  const installPromptMode = useMemo(
-    () =>
-      resolveInstallPromptMode({
-        hasDeferredPrompt: Boolean(deferredPrompt),
-        isIos: ios,
-        isAndroid: android,
-      }),
-    [deferredPrompt, ios, android],
-  );
+  const installPromptMode = useMemo((): InstallPromptMode => {
+    if (alreadyInstalledOnDevice && !standalone) return "already_installed";
+    if (standalone) return "manual_unsupported";
+    return resolveInstallPromptMode({
+      hasDeferredPrompt: Boolean(deferredPrompt),
+      isIos: ios,
+      isAndroid: android,
+    });
+  }, [deferredPrompt, ios, android, standalone, alreadyInstalledOnDevice]);
+
+  useEffect(() => {
+    if (alreadyInstalledOnDevice) setDeferredPrompt(null);
+  }, [alreadyInstalledOnDevice]);
+
+  const canNativeInstall =
+    Boolean(deferredPrompt) && !standalone && !alreadyInstalledOnDevice;
 
   const triggerInstall = useCallback(async () => {
-    if (!deferredPrompt) return "unavailable";
-    await deferredPrompt.prompt();
-    const choice = await deferredPrompt.userChoice;
-    setDeferredPrompt(null);
-    refreshStandalone();
-    return choice.outcome;
-  }, [deferredPrompt, refreshStandalone]);
+    if (!deferredPrompt || standalone || alreadyInstalledOnDevice) {
+      return "unavailable";
+    }
+    const promptEvent = deferredPrompt;
+    try {
+      await promptEvent.prompt();
+      const choice = await promptEvent.userChoice;
+      refreshStandalone();
+      return choice.outcome;
+    } finally {
+      setDeferredPrompt(null);
+      refreshStandalone();
+    }
+  }, [deferredPrompt, standalone, alreadyInstalledOnDevice, refreshStandalone]);
 
   const value = useMemo(
     (): PwaInstallContextValue => ({
       appUnlocked,
       standalone,
+      alreadyInstalledOnDevice,
       installPromptMode,
-      canNativeInstall: Boolean(deferredPrompt),
+      canNativeInstall,
       triggerInstall,
       hydrated,
     }),
     [
       appUnlocked,
       standalone,
+      alreadyInstalledOnDevice,
       installPromptMode,
-      deferredPrompt,
+      canNativeInstall,
       triggerInstall,
       hydrated,
     ],

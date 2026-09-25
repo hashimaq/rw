@@ -43,51 +43,25 @@ function ShareIcon({ className }: { className?: string }) {
   );
 }
 
-export function InstallAppFullScreen() {
-  const pwa = usePwaInstallOptional();
-  const [installing, setInstalling] = useState(false);
-
-  useEffect(() => {
-    document.documentElement.classList.remove("dark");
-    document.documentElement.style.colorScheme = "light";
-    document.documentElement.removeAttribute("data-rw-install-gate");
-
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, []);
-
-  if (!pwa) return null;
-
-  const { installPromptMode, canNativeInstall, hydrated } = pwa;
-  const showNativeCta = canNativeInstall && installPromptMode === "native_prompt";
+function InstallGateBody({
+  canNativeInstall,
+  installing,
+  onInstall,
+  installPromptMode,
+}: {
+  canNativeInstall: boolean;
+  installing: boolean;
+  onInstall: () => void;
+  installPromptMode: string;
+}) {
+  const showAlreadyInstalled = installPromptMode === "already_installed";
   const showIosGuide = installPromptMode === "ios_manual";
   const showAndroidGuide = installPromptMode === "android_manual";
   const showDesktopGuide = installPromptMode === "manual_unsupported";
-
-  const onInstall = async () => {
-    if (!canNativeInstall) return;
-    setInstalling(true);
-    try {
-      await pwa.triggerInstall();
-    } finally {
-      setInstalling(false);
-    }
-  };
+  const showInstallButton = !showAlreadyInstalled;
 
   return (
-    <div
-      className="fixed inset-0 z-[10000] flex min-h-dvh min-w-0 flex-col overflow-x-hidden overflow-y-auto bg-[#f3f4f8] text-[#0f1218]"
-      role="main"
-      aria-labelledby="rw-install-title"
-    >
-      <div className="pointer-events-none fixed inset-0 opacity-80" aria-hidden>
-        <div className="absolute -left-1/4 top-0 h-[50vh] w-[70vw] max-w-full rounded-full bg-red-200/50 blur-3xl" />
-        <div className="absolute -right-1/4 bottom-0 h-[40vh] w-[65vw] max-w-full rounded-full bg-red-100/60 blur-3xl" />
-      </div>
-
+    <>
       <div className="relative mx-auto flex w-full min-w-0 max-w-lg flex-1 flex-col justify-center px-5 py-[max(1.25rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:px-8">
         <div className="flex w-full min-w-0 flex-col items-center text-center">
           <div className="relative mb-6 h-32 w-32 shrink-0 overflow-hidden rounded-3xl border-2 border-red-200 shadow-[0_8px_32px_rgba(185,28,28,0.2)] sm:h-36 sm:w-36">
@@ -107,36 +81,59 @@ export function InstallAppFullScreen() {
             id="rw-install-title"
             className="mt-6 font-[family-name:var(--font-rw-display)] text-2xl tracking-wide text-[#0f1218] sm:text-3xl"
           >
-            Install the Red Wings app to continue
+            {showAlreadyInstalled
+              ? "Red Wings is already installed"
+              : "Install the Red Wings app to continue"}
           </h1>
           <p className="mt-4 max-w-sm text-pretty text-sm leading-relaxed text-zinc-600 sm:text-base">
-            Red Wings is designed to run as an installed app for the complete
-            experience.
+            {showAlreadyInstalled
+              ? "Open Red Wings from your home screen or app launcher. Updates load automatically when you use the installed app."
+              : "Red Wings is available as an installed app for live scoring, scorecards, stats, and the full match-day experience."}
           </p>
         </div>
 
         <div className="mt-8 w-full min-w-0 shrink-0 space-y-4">
-          {showNativeCta ? (
+          {showInstallButton ? (
             <button
               type="button"
               disabled={installing}
+              aria-busy={installing}
               className={cn(
-                "rw-focus-ring flex w-full min-h-[3rem] items-center justify-center gap-3 rounded-2xl",
+                "rw-focus-ring flex w-full min-h-[3.25rem] items-center justify-center gap-3 rounded-2xl",
                 "bg-gradient-to-b from-red-600 to-red-700 text-lg font-bold uppercase tracking-wide text-white",
-                "shadow-[0_8px_28px_rgba(185,28,28,0.35)] active:scale-[0.98] disabled:opacity-70",
-                "sm:min-h-[3.25rem] sm:text-xl",
+                "shadow-[0_8px_28px_rgba(185,28,28,0.35)] active:scale-[0.98] disabled:opacity-80",
+                "sm:min-h-[3.5rem] sm:text-xl",
               )}
               onClick={() => void onInstall()}
             >
               <InstallIcon className="h-7 w-7 shrink-0" />
-              {installing ? "Opening install…" : "Install App"}
+              {installing ? "INSTALLING..." : "INSTALL APP"}
             </button>
+          ) : null}
+
+          {showAlreadyInstalled ? (
+            <div className="w-full min-w-0 rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4 text-sm leading-relaxed text-zinc-700 sm:p-5">
+              <p className="font-semibold text-[#0f1218]">
+                Use your installed Red Wings app
+              </p>
+              <p className="mt-2">
+                This link opened in the browser. Launch{" "}
+                <strong>Red Wings Cricket</strong> from your device&apos;s home
+                screen or installed apps — no need to install again.
+              </p>
+            </div>
+          ) : null}
+
+          {!canNativeInstall && showIosGuide ? (
+            <p className="text-center text-xs text-zinc-500">
+              Use the steps below — Safari does not support one-tap install here.
+            </p>
           ) : null}
 
           {showIosGuide ? (
             <div className="w-full min-w-0 space-y-3 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm sm:p-5">
               <p className="text-center text-base font-semibold text-[#0f1218]">
-                Add Red Wings to your Home Screen
+                Tap Share → Add to Home Screen
               </p>
               <ol className="space-y-3 text-sm text-zinc-700">
                 <li className="flex min-w-0 items-start gap-3">
@@ -144,7 +141,8 @@ export function InstallAppFullScreen() {
                     <ShareIcon className="h-5 w-5" />
                   </span>
                   <span className="pt-2.5 text-left">
-                    Tap <strong>Share</strong> → <strong>Add to Home Screen</strong>
+                    Tap <strong>Share</strong>, then{" "}
+                    <strong>Add to Home Screen</strong>
                   </span>
                 </li>
                 <li className="flex min-w-0 items-start gap-3">
@@ -153,7 +151,6 @@ export function InstallAppFullScreen() {
                   </span>
                   <span className="pt-2.5 text-left">
                     Open <strong>Red Wings Cricket</strong> from your Home Screen
-                    to continue
                   </span>
                 </li>
               </ol>
@@ -166,9 +163,10 @@ export function InstallAppFullScreen() {
                 Install from Chrome
               </p>
               <p>
-                Use your browser&apos;s <strong>Install app</strong> or{" "}
-                <strong>Add to Home screen</strong> option (menu or address bar),
-                then open Red Wings from your home screen.
+                When <strong>INSTALL APP</strong> is available it opens the
+                native prompt. Otherwise use the browser menu →{" "}
+                <strong>Install app</strong> or <strong>Add to Home screen</strong>,
+                then launch Red Wings from your home screen.
               </p>
             </div>
           ) : null}
@@ -179,20 +177,78 @@ export function InstallAppFullScreen() {
                 Install from your browser
               </p>
               <p>
-                Use the browser&apos;s <strong>Install app</strong> option in the
-                address bar or menu, then launch Red Wings from your installed
-                apps.
+                When <strong>INSTALL APP</strong> is ready it triggers the native
+                install dialog. You can also use the <strong>Install app</strong>{" "}
+                control in the address bar or browser menu, then open Red Wings
+                from your installed apps.
               </p>
             </div>
           ) : null}
-
-          {!hydrated && !showNativeCta && !showIosGuide && !showAndroidGuide && !showDesktopGuide ? (
-            <p className="text-center text-sm text-zinc-500">
-              Checking install availability…
-            </p>
-          ) : null}
         </div>
       </div>
+    </>
+  );
+}
+
+export function InstallAppFullScreen() {
+  const pwa = usePwaInstallOptional();
+  const [installing, setInstalling] = useState(false);
+
+  useEffect(() => {
+    document.documentElement.classList.remove("dark");
+    document.documentElement.style.colorScheme = "light";
+    document.documentElement.removeAttribute("data-rw-install-gate");
+
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, []);
+
+  const onInstall = async () => {
+    if (!pwa?.canNativeInstall) return;
+    setInstalling(true);
+    try {
+      await pwa.triggerInstall();
+    } finally {
+      setInstalling(false);
+    }
+  };
+
+  if (!pwa) {
+    return (
+      <div
+        className="fixed inset-0 z-[10000] flex min-h-dvh flex-col bg-[#f3f4f8] text-[#0f1218]"
+        role="main"
+        aria-labelledby="rw-install-title"
+      >
+        <InstallGateBody
+          canNativeInstall={false}
+          installing={false}
+          onInstall={() => {}}
+          installPromptMode="manual_unsupported"
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[10000] flex min-h-dvh min-w-0 flex-col overflow-x-hidden overflow-y-auto bg-[#f3f4f8] text-[#0f1218]"
+      role="main"
+      aria-labelledby="rw-install-title"
+    >
+      <div className="pointer-events-none fixed inset-0 opacity-80" aria-hidden>
+        <div className="absolute -left-1/4 top-0 h-[50vh] w-[70vw] max-w-full rounded-full bg-red-200/50 blur-3xl" />
+        <div className="absolute -right-1/4 bottom-0 h-[40vh] w-[65vw] max-w-full rounded-full bg-red-100/60 blur-3xl" />
+      </div>
+      <InstallGateBody
+        canNativeInstall={pwa.canNativeInstall}
+        installing={installing}
+        onInstall={() => void onInstall()}
+        installPromptMode={pwa.installPromptMode}
+      />
     </div>
   );
 }

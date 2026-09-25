@@ -21,8 +21,8 @@ export function RedWingsLogo({
   variant = "plain",
   animate = false,
 }: RedWingsLogoProps) {
-  const fitClass =
-    variant === "header" ? "object-contain object-center" : "object-cover object-center";
+  /** Same crop as install gate / PWA — full new rwings.jpg artwork. */
+  const fitClass = "object-cover object-center";
 
   const image = (
     <Image

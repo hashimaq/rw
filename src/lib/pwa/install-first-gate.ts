@@ -35,7 +35,8 @@ export type InstallPromptMode =
   | "native_prompt"
   | "ios_manual"
   | "manual_unsupported"
-  | "android_manual";
+  | "android_manual"
+  | "already_installed";
 
 export function resolveInstallPromptMode(input: {
   hasDeferredPrompt: boolean;

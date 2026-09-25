@@ -1,5 +1,5 @@
 /* Red Wings Cricket — production app shell (static + last-visited pages only). */
-const VERSION = "rw-pwa-v1";
+const VERSION = "rw-pwa-v2";
 const STATIC_CACHE = `${VERSION}-static`;
 const PAGE_CACHE = `${VERSION}-pages`;
 
