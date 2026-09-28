@@ -9,7 +9,10 @@ import {
 } from "@/lib/commentary/delivery-commentary-audio-queue";
 import { resetCommentaryPlaybackBaselineForTests } from "@/lib/commentary/commentary-playback-session";
 
+let playCallCount = 0;
+
 beforeEach(() => {
+  playCallCount = 0;
   resetDeliveryCommentaryQueueForTests();
   resetCommentaryPlaybackBaselineForTests();
   configureCommentaryPlaybackBaseline({ minSequenceInInnings: 1 });
@@ -26,15 +29,22 @@ beforeEach(() => {
     preload = "";
     src = "";
     currentTime = 0;
-    addEventListener() {}
+    addEventListener(_: string, fn: () => void) {
+      if (_ === "ended") {
+        queueMicrotask(() => fn());
+      }
+    }
     removeEventListener() {}
     pause() {}
     load() {}
     play() {
-      return Promise.reject(new Error("autoplay blocked"));
+      playCallCount += 1;
+      return Promise.resolve();
     }
   }
   vi.stubGlobal("Audio", MockAudio);
+  (globalThis as { __rwPlayCallCount?: () => number }).__rwPlayCallCount =
+    () => playCallCount;
 });
 
 afterEach(() => {
@@ -99,6 +109,62 @@ describe("delivery commentary audio queue", () => {
     expect(commentaryQueueTestState().nextSequenceToPlay).toBe(50);
     notifyLocalScoringDeliveryCommitted(52);
     expect(commentaryQueueTestState().nextSequenceToPlay).toBe(52);
+  });
+
+  it("plays each clientEventId at most once", async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: {
+        get: (name: string) =>
+          name.toLowerCase() === "content-type" ? "audio/wav" : null,
+      },
+      blob: async () => new Blob([new Uint8Array([1, 2, 3])]),
+    } as Response);
+    const item = {
+      clientEventId: "11111111-1111-1111-1111-111111111111",
+      inningsId: "22222222-2222-2222-2222-222222222222",
+      sequenceInInnings: 1,
+    };
+    enqueueDeliveryCommentaryReady(item);
+    await drainCommentaryAudioQueueForTests();
+    enqueueDeliveryCommentaryReady(item);
+    await drainCommentaryAudioQueueForTests();
+    const playCount = (
+      globalThis as { __rwPlayCallCount?: () => number }
+    ).__rwPlayCallCount?.();
+    expect(playCount).toBe(1);
+    expect(commentaryQueueTestState().playedClientEventIds).toEqual([
+      item.clientEventId,
+    ]);
+  });
+
+  it("still plays consecutive deliveries in order", async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: {
+        get: (name: string) =>
+          name.toLowerCase() === "content-type" ? "audio/wav" : null,
+      },
+      blob: async () => new Blob([new Uint8Array([1])]),
+    } as Response);
+    enqueueDeliveryCommentaryReady({
+      clientEventId: "11111111-1111-1111-1111-111111111111",
+      inningsId: "22222222-2222-2222-2222-222222222222",
+      sequenceInInnings: 1,
+    });
+    enqueueDeliveryCommentaryReady({
+      clientEventId: "22222222-2222-2222-2222-222222222222",
+      inningsId: "22222222-2222-2222-2222-222222222222",
+      sequenceInInnings: 2,
+    });
+    await drainCommentaryAudioQueueForTests();
+    expect(commentaryQueueTestState().nextSequenceToPlay).toBe(3);
+    const playCount = (
+      globalThis as { __rwPlayCallCount?: () => number }
+    ).__rwPlayCallCount?.();
+    expect(playCount).toBe(2);
   });
 
   it("does not skip current ball when min sequence increases mid-innings", () => {

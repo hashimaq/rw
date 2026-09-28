@@ -3,6 +3,7 @@ import {
   requireScoringControllerSession,
   ScoringAuthorizationError,
 } from "@/lib/auth/scoring-session";
+import { getCommentaryAudioFromEphemeralCache } from "@/lib/commentary/commentary-audio-ephemeral-cache";
 import { createServiceRoleClient } from "@/lib/supabase/admin";
 
 export async function GET(
@@ -28,9 +29,12 @@ export async function GET(
       return NextResponse.json({ status: "none", ready: false });
     }
 
+    const ephemeral = getCommentaryAudioFromEphemeralCache(clientEventId);
+    const ready = row.status === "ready" || Boolean(ephemeral);
+
     return NextResponse.json({
       status: row.status,
-      ready: row.status === "ready",
+      ready,
       innings_id: row.innings_id,
       sequence_in_innings: row.sequence_in_innings,
       error_message:

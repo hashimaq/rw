@@ -149,7 +149,10 @@ export function LiveScoreScreen({
   useDeliveryCommentaryPlayback({
     matchId,
     inningsId: resolvedBootstrap?.activeInningsId ?? null,
-    enabled: live && Boolean(resolvedBootstrap?.activeInningsId),
+    enabled:
+      live &&
+      Boolean(resolvedBootstrap?.activeInningsId) &&
+      !isController,
     minSequenceInInnings: commentaryMinSequence,
   });
 

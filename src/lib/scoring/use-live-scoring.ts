@@ -100,6 +100,7 @@ import { useInningsDeliveriesRealtime } from "@/lib/scoring/use-innings-deliveri
 import {
   configureCommentaryPlaybackBaseline,
   notifyLocalScoringDeliveryCommitted,
+  setCommentaryPlaybackMode,
   unlockDeliveryCommentaryAudio,
 } from "@/lib/commentary/delivery-commentary-audio-queue";
 import {
@@ -534,6 +535,13 @@ export function useLiveScoring(
   ]);
 
   useEffect(() => {
+    setCommentaryPlaybackMode(isController ? "scorer-latest" : "strict");
+    return () => {
+      setCommentaryPlaybackMode("strict");
+    };
+  }, [isController]);
+
+  useEffect(() => {
     if (!isController || bootstrap.status === "completed") return;
     void runFlush();
     const id = window.setInterval(() => void runFlush(), 4000);
@@ -651,7 +659,10 @@ export function useLiveScoring(
         committedAt,
         result.delivery.sequenceInInnings,
       );
-      notifyLocalScoringDeliveryCommitted(result.delivery.sequenceInInnings);
+      notifyLocalScoringDeliveryCommitted(
+        result.delivery.sequenceInInnings,
+        clientEventId,
+      );
       unlockDeliveryCommentaryAudio();
       const payload = deliveryInputToPayload(inningsId, result.delivery);
       if (shouldGenerateDeliveryCommentary(payload)) {

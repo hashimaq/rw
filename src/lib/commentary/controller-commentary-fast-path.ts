@@ -1,7 +1,11 @@
 "use client";
 
 import { logCommentaryClientLatency } from "@/lib/commentary/commentary-latency-client";
-import { enqueueDeliveryCommentaryReady } from "@/lib/commentary/delivery-commentary-audio-queue";
+import {
+  enqueueCommentaryForPlayback,
+  isCommentaryPlaybackComplete,
+  isCommentarySupersededForScorer,
+} from "@/lib/commentary/delivery-commentary-audio-queue";
 import type { DeliveryInputPayload } from "@/lib/validation/delivery";
 
 const watchesInFlight = new Set<string>();
@@ -58,6 +62,9 @@ export function startControllerCommentaryFastPath(options: {
       const deadline = Date.now() + 45_000;
       let delayMs = 50;
       while (Date.now() < deadline) {
+        if (isCommentaryPlaybackComplete(clientEventId)) {
+          return;
+        }
         const statusRequestUrl = statusUrl(clientEventId);
         const res = await fetch(statusRequestUrl, {
           credentials: "include",
@@ -73,6 +80,24 @@ export function startControllerCommentaryFastPath(options: {
             code?: string;
           };
           if (json.ready && json.innings_id && json.sequence_in_innings != null) {
+            if (isCommentaryPlaybackComplete(clientEventId)) {
+              return;
+            }
+            if (
+              isCommentarySupersededForScorer(
+                clientEventId,
+                json.sequence_in_innings,
+              )
+            ) {
+              logCommentaryClientLatency({
+                clientEventId,
+                stage: "metadata_received",
+                deliveryCommittedAtMs: options.deliveryCommittedAtMs,
+                sequenceInInnings: json.sequence_in_innings,
+                extra: { kind: "controller_status_superseded" },
+              });
+              return;
+            }
             logCommentaryClientLatency({
               clientEventId,
               stage: "metadata_received",
@@ -80,7 +105,7 @@ export function startControllerCommentaryFastPath(options: {
               sequenceInInnings: json.sequence_in_innings,
               extra: { kind: "controller_status_ready" },
             });
-            enqueueDeliveryCommentaryReady({
+            enqueueCommentaryForPlayback({
               clientEventId,
               inningsId: json.innings_id,
               sequenceInInnings: json.sequence_in_innings,

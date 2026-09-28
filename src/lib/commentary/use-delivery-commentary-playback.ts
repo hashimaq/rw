@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import {
   cancelDeliveryCommentaryPlayback,
   configureCommentaryPlaybackBaseline,
-  enqueueDeliveryCommentaryReady,
+  enqueueCommentaryForPlayback,
 } from "@/lib/commentary/delivery-commentary-audio-queue";
 import {
   getCommentaryPlaybackBaselineSequence,
@@ -24,11 +24,16 @@ function handleReadyRow(row: CommentaryRow): void {
   if (row.status !== "ready") return;
   const baseline = getCommentaryPlaybackBaselineSequence();
   if (row.sequence_in_innings < baseline) return;
-  enqueueDeliveryCommentaryReady({
+  enqueueCommentaryForPlayback({
     clientEventId: row.client_event_id,
     inningsId: row.innings_id,
     sequenceInInnings: row.sequence_in_innings,
   });
+}
+
+/** Test helper */
+export function handleReadyRowForTests(row: CommentaryRow): void {
+  handleReadyRow(row);
 }
 
 /** Subscribes to ready ball commentary for playback (no UI). */

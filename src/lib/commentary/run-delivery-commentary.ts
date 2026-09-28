@@ -8,7 +8,7 @@ import {
   type DeliveryCommentaryContext,
 } from "@/lib/commentary/delivery-commentary-context";
 import { generateDeliveryCommentaryText } from "@/lib/commentary/gemini-delivery-commentary-text";
-import { synthesizeDeliveryCommentarySpeech } from "@/lib/commentary/gemini-delivery-commentary-tts";
+import { synthesizeDeliveryCommentarySpeech } from "@/lib/commentary/delivery-commentary-tts";
 import type { Delivery } from "@/lib/database/types";
 import { createServiceRoleClient } from "@/lib/supabase/admin";
 import type { DeliveryInputPayload } from "@/lib/validation/delivery";
@@ -87,7 +87,7 @@ export async function runDeliveryCommentaryJob(
     .from("delivery_commentary")
     .update({ status: "processing", error_message: null })
     .eq("client_event_id", context.clientEventId)
-    .in("status", ["pending", "processing", "failed"])
+    .in("status", ["pending", "failed"])
     .select("client_event_id")
     .maybeSingle();
 
@@ -106,14 +106,33 @@ export async function runDeliveryCommentaryJob(
       textLength: text.length,
     });
 
-    latency(context.clientEventId, "gemini_tts_started", deliveryCommittedAtMs);
+    latency(context.clientEventId, "elevenlabs_tts_started", deliveryCommittedAtMs);
     const ttsStarted = Date.now();
+    let ttsProvider: string = "unknown";
     const { buffer, mimeType, model: ttsModel } =
-      await synthesizeDeliveryCommentarySpeech(text);
-    latency(context.clientEventId, "gemini_tts_done", deliveryCommittedAtMs, {
+      await synthesizeDeliveryCommentarySpeech(text, {
+        onProvider: (p) => {
+          ttsProvider = p;
+          latency(context.clientEventId, "tts_provider", deliveryCommittedAtMs, {
+            provider: p,
+          });
+        },
+        onFirstAudioByte: (atMs) => {
+          latency(
+            context.clientEventId,
+            "elevenlabs_first_audio_byte",
+            deliveryCommittedAtMs,
+            {
+              msFromTtsStart: atMs - ttsStarted,
+            },
+          );
+        },
+      });
+    latency(context.clientEventId, "elevenlabs_tts_done", deliveryCommittedAtMs, {
       durationMs: Date.now() - ttsStarted,
       bytes: buffer.length,
       ttsModel,
+      provider: ttsProvider,
     });
 
     latency(context.clientEventId, "wav_ready", deliveryCommittedAtMs);
@@ -191,13 +210,16 @@ export async function scheduleDeliveryCommentaryForDelivery(options: {
   const supabase = createServiceRoleClient();
   const { data: inserted, error } = await supabase
     .from("delivery_commentary")
-    .insert({
-      client_event_id: context.clientEventId,
-      match_id: context.matchId,
-      innings_id: context.inningsId,
-      sequence_in_innings: context.sequenceInInnings,
-      status: "processing",
-    })
+    .upsert(
+      {
+        client_event_id: context.clientEventId,
+        match_id: context.matchId,
+        innings_id: context.inningsId,
+        sequence_in_innings: context.sequenceInInnings,
+        status: "pending",
+      },
+      { onConflict: "client_event_id", ignoreDuplicates: true },
+    )
     .select("client_event_id")
     .maybeSingle();
 
