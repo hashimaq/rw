@@ -1,5 +1,5 @@
 import { isInstallFirstGateEnabled } from "@/lib/pwa/install-gate-enabled";
-import { BRAND_LOGO_URL } from "@/lib/brand/logo-src";
+import { BRAND_LOGO_SRC } from "@/lib/brand/logo-src";
 
 /** Shown synchronously before React hydrates when the PWA gate is active. */
 export function PwaStaticInstallShell() {
@@ -13,7 +13,7 @@ export function PwaStaticInstallShell() {
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={BRAND_LOGO_URL}
+        src={BRAND_LOGO_SRC}
         alt=""
         width={96}
         height={96}

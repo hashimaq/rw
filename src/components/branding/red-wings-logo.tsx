@@ -1,8 +1,8 @@
 import Image from "next/image";
-import { BRAND_LOGO_URL } from "@/lib/brand/logo-src";
+import { BRAND_LOGO_SRC } from "@/lib/brand/logo-src";
 import { cn } from "@/lib/utils/cn";
 
-export const LOGO_SRC = BRAND_LOGO_URL;
+export const LOGO_SRC = BRAND_LOGO_SRC;
 
 type LogoVariant = "plain" | "square" | "hero" | "header" | "brand";
 
