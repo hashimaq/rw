@@ -1,11 +1,9 @@
 "use client";
 
-import Image from "next/image";
 import { useEffect, useState } from "react";
+import { BrandLogoImage } from "@/components/branding/brand-logo-image";
 import { usePwaInstallOptional } from "@/components/pwa/pwa-provider";
 import { cn } from "@/lib/utils/cn";
-
-import { BRAND_LOGO_SRC } from "@/lib/brand/logo-src";
 
 function InstallIcon({ className }: { className?: string }) {
   return (
@@ -65,14 +63,7 @@ function InstallGateBody({
       <div className="relative mx-auto flex w-full min-w-0 max-w-lg flex-1 flex-col justify-center px-5 py-[max(1.25rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:px-8">
         <div className="flex w-full min-w-0 flex-col items-center text-center">
           <div className="relative mb-6 h-32 w-32 shrink-0 overflow-hidden rounded-3xl border-2 border-red-200 shadow-[0_8px_32px_rgba(185,28,28,0.2)] sm:h-36 sm:w-36">
-            <Image
-              src={BRAND_LOGO_SRC}
-              alt="Red Wings Cricket"
-              fill
-              className="object-cover"
-              priority
-              sizes="144px"
-            />
+            <BrandLogoImage size={144} priority className="h-full w-full" />
           </div>
           <p className="font-[family-name:var(--font-rw-display)] text-4xl tracking-[0.14em] text-[#b91c1c] sm:text-5xl">
             RED WINGS CRICKET

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { RedWingsIdentityBlock } from "@/components/branding/red-wings-logo";
 
-const SPLASH_KEY = "rw-splash-session";
+const SPLASH_KEY = "rw-splash-session-v2";
 const MIN_MS = 1200;
 const MAX_MS = 1800;
 

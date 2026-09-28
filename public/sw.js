@@ -1,5 +1,5 @@
 /* Red Wings Cricket — production app shell (static + last-visited pages only). */
-const VERSION = "rw-pwa-v2";
+const VERSION = "rw-pwa-v3";
 const STATIC_CACHE = `${VERSION}-static`;
 const PAGE_CACHE = `${VERSION}-pages`;
 
@@ -17,12 +17,13 @@ function isApiRequest(url) {
   return url.pathname.startsWith("/api/");
 }
 
-function isScoringPath(pathname) {
-  return (
-    pathname.startsWith("/live/") ||
-    pathname.startsWith("/match/") ||
-    pathname === "/"
-  );
+/** Offline page cache only — never cache home (/) to avoid stale logos/UI. */
+function isOfflinePageCachePath(pathname) {
+  return pathname.startsWith("/live/") || pathname.startsWith("/match/");
+}
+
+function isBrandAsset(pathname) {
+  return pathname.startsWith("/brand/");
 }
 
 self.addEventListener("install", (event) => {
@@ -37,9 +38,9 @@ self.addEventListener("activate", (event) => {
     caches.keys().then((keys) =>
       Promise.all(
         keys
-          .filter((k) => k.startsWith("rw-pwa-") && k !== STATIC_CACHE && k !== PAGE_CACHE)
+          .filter((k) => k.startsWith("rw-pwa-"))
           .map((k) => caches.delete(k)),
-      ),
+      ).then(() => caches.open(STATIC_CACHE).then((c) => c.addAll(PRECACHE_URLS))),
     ),
   );
   self.clients.claim();
@@ -52,11 +53,16 @@ self.addEventListener("fetch", (event) => {
 
   if (event.request.method !== "GET") return;
 
+  if (isBrandAsset(url.pathname)) {
+    event.respondWith(fetch(event.request));
+    return;
+  }
+
   if (isNavigation(event.request)) {
     event.respondWith(
       fetch(event.request)
         .then((response) => {
-          if (response.ok && isScoringPath(url.pathname)) {
+          if (response.ok && isOfflinePageCachePath(url.pathname)) {
             const clone = response.clone();
             caches.open(PAGE_CACHE).then((cache) => {
               cache.put(event.request, clone);

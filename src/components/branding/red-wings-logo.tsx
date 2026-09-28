@@ -1,5 +1,5 @@
-import Image from "next/image";
 import { BRAND_LOGO_SRC } from "@/lib/brand/logo-src";
+import { BrandLogoImage } from "@/components/branding/brand-logo-image";
 import { cn } from "@/lib/utils/cn";
 
 export const LOGO_SRC = BRAND_LOGO_SRC;
@@ -22,13 +22,10 @@ export function RedWingsLogo({
   animate = false,
 }: RedWingsLogoProps) {
   const image = (
-    <Image
-      src={LOGO_SRC}
-      alt="Red Wings Cricket logo"
-      width={size}
-      height={size}
+    <BrandLogoImage
+      size={size}
       priority={priority}
-      className={cn("h-full w-full object-cover object-center", className)}
+      className={className}
     />
   );
 
@@ -51,7 +48,7 @@ export function RedWingsLogo({
     return (
       <span
         className={cn(
-          "inline-flex shrink-0 items-center justify-center overflow-hidden rounded-lg border border-[var(--rw-logo-square-border)] bg-[var(--rw-logo-square-bg)] shadow-sm",
+          "inline-flex shrink-0 items-center justify-center overflow-hidden rounded-lg border border-red-200/80 bg-white shadow-sm",
           animate && "rw-animate-in",
         )}
         style={{ width: size, height: size }}
@@ -125,7 +122,6 @@ export function RedWingsIdentityBlock({
   priority?: boolean;
   animate?: boolean;
   panel?: boolean;
-  /** Splash / launch — show rwings.jpg only. */
   logoOnly?: boolean;
 }) {
   const inner = logoOnly ? (
