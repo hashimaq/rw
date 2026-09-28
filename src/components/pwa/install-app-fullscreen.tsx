@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { usePwaInstallOptional } from "@/components/pwa/pwa-provider";
 import { cn } from "@/lib/utils/cn";
 
-import { BRAND_LOGO_SRC } from "@/lib/brand/logo-src";
+import { BRAND_LOGO_URL } from "@/lib/brand/logo-src";
 
 function InstallIcon({ className }: { className?: string }) {
   return (
@@ -66,7 +66,7 @@ function InstallGateBody({
         <div className="flex w-full min-w-0 flex-col items-center text-center">
           <div className="relative mb-6 h-32 w-32 shrink-0 overflow-hidden rounded-3xl border-2 border-red-200 shadow-[0_8px_32px_rgba(185,28,28,0.2)] sm:h-36 sm:w-36">
             <Image
-              src={BRAND_LOGO_SRC}
+              src={BRAND_LOGO_URL}
               alt="Red Wings Cricket"
               fill
               className="object-cover"

@@ -52,7 +52,7 @@ export function SplashScreen() {
         className="pointer-events-none flex flex-col items-center px-8"
         style={{ animation: "rw-splash-logo 0.9s ease both" }}
       >
-        <RedWingsIdentityBlock logoSize={136} priority panel />
+        <RedWingsIdentityBlock logoSize={160} priority logoOnly />
       </div>
     </div>
   );
@@ -61,7 +61,7 @@ export function SplashScreen() {
 function cnOverlay(fadeOut: boolean) {
   return [
     "fixed inset-0 z-[100] flex items-center justify-center",
-    "bg-[var(--rw-bg)] rw-app-bg",
+    "bg-[#f3f4f8] rw-app-bg",
     "transition-opacity duration-500 ease-out",
     fadeOut ? "pointer-events-none opacity-0" : "opacity-100",
   ].join(" ");

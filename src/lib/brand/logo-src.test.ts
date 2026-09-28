@@ -1,13 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "fs";
 import { join } from "path";
-import { BRAND_LOGO_SRC } from "@/lib/brand/logo-src";
+import { BRAND_LOGO_SRC, BRAND_LOGO_URL } from "@/lib/brand/logo-src";
 import { LOGO_SRC } from "@/components/branding/red-wings-logo";
 
 describe("brand logo", () => {
   it("uses the official public brand asset everywhere", () => {
     expect(BRAND_LOGO_SRC).toBe("/brand/rwings.jpg");
-    expect(LOGO_SRC).toBe(BRAND_LOGO_SRC);
+    expect(BRAND_LOGO_URL).toContain("/brand/rwings.jpg");
+    expect(LOGO_SRC).toBe(BRAND_LOGO_URL);
   });
 
   it("keeps Next app icons in sync with public brand file", () => {

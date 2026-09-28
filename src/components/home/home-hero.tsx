@@ -26,7 +26,7 @@ export function HomeHero({ compact = false }: HomeHeroProps) {
 
       <div className="relative flex flex-col items-center text-center">
         <HomeHeroBranding
-          logoSize={compact ? 112 : 152}
+          logoSize={compact ? 128 : 168}
           priority
           animate={!compact}
         />

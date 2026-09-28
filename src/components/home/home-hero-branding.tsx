@@ -1,7 +1,7 @@
 import { RedWingsLogo } from "@/components/branding/red-wings-logo";
 import { cn } from "@/lib/utils/cn";
 
-/** Home-only team lockup: logo → crimson wordmark → gold quoted slogan. */
+/** Home hero — official rwings.jpg lockup (mobile-first size). */
 export function HomeHeroBranding({
   logoSize = 152,
   priority = false,
@@ -11,12 +11,14 @@ export function HomeHeroBranding({
   priority?: boolean;
   animate?: boolean;
 }) {
+  const displaySize = Math.max(logoSize, 128);
+
   return (
     <div className="rw-home-identity">
-      <div className={cn("rw-home-identity-panel", animate && "rw-animate-in")}>
+      <div className={cn("flex flex-col items-center text-center", animate && "rw-animate-in")}>
         <RedWingsLogo
-          size={logoSize}
-          variant="hero"
+          size={displaySize}
+          variant="brand"
           priority={priority}
           animate={animate}
         />

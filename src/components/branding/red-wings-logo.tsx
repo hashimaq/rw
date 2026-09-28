@@ -1,10 +1,10 @@
 import Image from "next/image";
-import { BRAND_LOGO_SRC } from "@/lib/brand/logo-src";
+import { BRAND_LOGO_URL } from "@/lib/brand/logo-src";
 import { cn } from "@/lib/utils/cn";
 
-export const LOGO_SRC = BRAND_LOGO_SRC;
+export const LOGO_SRC = BRAND_LOGO_URL;
 
-type LogoVariant = "plain" | "square" | "hero" | "header";
+type LogoVariant = "plain" | "square" | "hero" | "header" | "brand";
 
 interface RedWingsLogoProps {
   size?: number;
@@ -21,9 +21,6 @@ export function RedWingsLogo({
   variant = "plain",
   animate = false,
 }: RedWingsLogoProps) {
-  /** Same crop as install gate / PWA — full new rwings.jpg artwork. */
-  const fitClass = "object-cover object-center";
-
   const image = (
     <Image
       src={LOGO_SRC}
@@ -31,9 +28,24 @@ export function RedWingsLogo({
       width={size}
       height={size}
       priority={priority}
-      className={cn("h-full w-full", fitClass, className)}
+      className={cn("h-full w-full object-cover object-center", className)}
     />
   );
+
+  if (variant === "brand" || variant === "hero") {
+    return (
+      <span
+        className={cn(
+          "inline-flex shrink-0 overflow-hidden rounded-3xl border-2 border-red-200 shadow-[0_8px_32px_rgba(185,28,28,0.2)]",
+          animate && "rw-animate-in",
+          variant === "hero" && "rw-animate-in-delay-1",
+        )}
+        style={{ width: size, height: size }}
+      >
+        {image}
+      </span>
+    );
+  }
 
   if (variant === "header") {
     return (
@@ -49,11 +61,11 @@ export function RedWingsLogo({
     );
   }
 
-  if (variant === "plain") {
+  if (variant === "plain" || variant === "square") {
     return (
       <span
         className={cn(
-          "inline-block overflow-hidden rounded-lg border border-[var(--rw-logo-square-border)] bg-[var(--rw-logo-square-bg)] shadow-sm",
+          "inline-flex shrink-0 overflow-hidden rounded-2xl border border-red-200/80 bg-white shadow-sm",
           animate && "rw-animate-in",
         )}
         style={{ width: size, height: size }}
@@ -63,25 +75,7 @@ export function RedWingsLogo({
     );
   }
 
-  const isHero = variant === "hero";
-
-  return (
-    <span
-      className={cn(
-        "rw-logo-square inline-flex",
-        isHero && "rw-logo-square-hero",
-        animate && "rw-animate-in",
-        isHero && "rw-animate-in-delay-1",
-      )}
-    >
-      <span
-        className="rw-logo-square-inner inline-flex shrink-0"
-        style={{ width: size, height: size }}
-      >
-        {image}
-      </span>
-    </span>
-  );
+  return image;
 }
 
 export function RedWingsWordmark({
@@ -125,17 +119,27 @@ export function RedWingsIdentityBlock({
   priority = false,
   animate = false,
   panel = false,
+  logoOnly = false,
 }: {
   logoSize?: number;
   priority?: boolean;
   animate?: boolean;
   panel?: boolean;
+  /** Splash / launch — show rwings.jpg only. */
+  logoOnly?: boolean;
 }) {
-  const inner = (
+  const inner = logoOnly ? (
+    <RedWingsLogo
+      size={logoSize}
+      variant="brand"
+      priority={priority}
+      animate={animate}
+    />
+  ) : (
     <>
       <RedWingsLogo
         size={logoSize}
-        variant="hero"
+        variant="brand"
         priority={priority}
         animate={animate}
       />
@@ -143,9 +147,13 @@ export function RedWingsIdentityBlock({
     </>
   );
 
-  return (
-    <div className="rw-identity-block">
-      {panel ? <div className="rw-identity-panel">{inner}</div> : inner}
-    </div>
-  );
+  if (panel && !logoOnly) {
+    return (
+      <div className="rw-identity-block">
+        <div className="rw-identity-panel">{inner}</div>
+      </div>
+    );
+  }
+
+  return <div className="rw-identity-block">{inner}</div>;
 }
