@@ -1,8 +1,5 @@
 import { NextResponse } from "next/server";
-import {
-  requireActiveScorerSession,
-  requireScoringControllerSession,
-} from "@/lib/auth/scoring-session";
+import { requireActiveScorerSession } from "@/lib/auth/scoring-session";
 import { getCommentaryAudioFromEphemeralCache } from "@/lib/commentary/commentary-audio-ephemeral-cache";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceRoleClient } from "@/lib/supabase/admin";
@@ -65,16 +62,10 @@ export async function GET(
 
   const cached = getCommentaryAudioFromEphemeralCache(clientEventId);
   if (cached) {
-    let allowed = false;
-    try {
-      const controller = await requireScoringControllerSession();
-      allowed = controller.matchId === cached.matchId;
-    } catch {
-      allowed = await canReadCommentaryAudio(
-        cached.matchId,
-        user?.id ?? null,
-      );
-    }
+    const allowed = await canReadCommentaryAudio(
+      cached.matchId,
+      user?.id ?? null,
+    );
     if (!allowed) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }

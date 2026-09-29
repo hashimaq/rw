@@ -6,7 +6,10 @@ import type { DeliveryCommentaryContext } from "@/lib/commentary/delivery-commen
 
 const DEFAULT_COMMENTARY_MODEL = "gemini-3.5-flash-lite";
 
-const SYSTEM_INSTRUCTION = `Urdu cricket ball comment. One short sentence only. Urdu script. Keep player names as given. No markdown.`;
+const SYSTEM_INSTRUCTION = `Pakistani cricket commentator. ONE very short Urdu sentence for this ball only.
+Use Urdu script (not Roman Urdu). Keep striker and bowler names exactly as given (Latin if given in Latin).
+State only what happened: runs, dot, extra type, wicket type if any. No invented details.
+Max ~12 words of Urdu besides names. No markdown. No English except names. Output the sentence only.`;
 
 function readCommentaryModel(): string {
   return (
@@ -29,21 +32,27 @@ export async function generateDeliveryCommentaryText(
   const model = readCommentaryModel();
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
 
-  const bits: string[] = [
-    `${context.overNumber}.${context.ballNumber}`,
-    context.strikerName,
-    context.bowlerName,
-    `tr:${context.totalRuns}`,
-  ];
-  if (context.extrasRuns > 0) bits.push(`x:${context.extraType}+${context.extrasRuns}`);
-  if (context.isSix) bits.push("six");
-  else if (context.isBoundary) bits.push("four");
-  if (context.isWicket) {
-    bits.push(`w:${context.wicketType ?? "out"}`);
-    if (context.dismissedPlayerName) bits.push(context.dismissedPlayerName);
-  }
-  if (!context.isLegalDelivery) bits.push("illegal");
-  const userPayload = bits.join("|");
+  const userPayload = {
+    over: context.overNumber,
+    ball: context.ballNumber,
+    striker: context.strikerName,
+    bowler: context.bowlerName,
+    batterRuns: context.batterRuns,
+    extras: context.extrasRuns,
+    extraType: context.extraType,
+    totalRuns: context.totalRuns,
+    legal: context.isLegalDelivery,
+    boundary: context.isBoundary,
+    six: context.isSix,
+    wicket: context.isWicket,
+    wicketType: context.wicketType,
+    dismissed: context.dismissedPlayerName,
+    score: `${context.teamTotalRuns}/${context.teamWickets}`,
+    chase:
+      context.target != null
+        ? { need: context.runsNeeded, balls: context.ballsRemaining }
+        : null,
+  };
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 25_000);
@@ -63,12 +72,12 @@ export async function generateDeliveryCommentaryText(
         contents: [
           {
             role: "user",
-            parts: [{ text: userPayload }],
+            parts: [{ text: JSON.stringify(userPayload) }],
           },
         ],
         generationConfig: {
-          temperature: 0.5,
-          maxOutputTokens: 48,
+          temperature: 0.7,
+          maxOutputTokens: 64,
         },
       }),
       signal: controller.signal,

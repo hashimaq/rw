@@ -2,7 +2,6 @@ import "server-only";
 
 import { isGeminiConfigured } from "@/lib/ai/gemini/config";
 import { putCommentaryAudioInEphemeralCache } from "@/lib/commentary/commentary-audio-ephemeral-cache";
-import { markCommentaryReadyForController } from "@/lib/commentary/commentary-ready-notifier";
 import { logCommentaryLatency } from "@/lib/commentary/commentary-latency-log";
 import {
   buildDeliveryCommentaryContext,
@@ -41,22 +40,8 @@ function latency(
 async function markFailed(
   clientEventId: string,
   message: string,
-  context?: Pick<
-    DeliveryCommentaryContext,
-    "matchId" | "inningsId" | "sequenceInInnings"
-  >,
 ): Promise<void> {
   console.error("[delivery-commentary] job failed:", clientEventId, message);
-  if (context) {
-    markCommentaryReadyForController({
-      clientEventId,
-      matchId: context.matchId,
-      inningsId: context.inningsId,
-      sequenceInInnings: context.sequenceInInnings,
-      failed: true,
-      errorMessage: message.slice(0, 500),
-    });
-  }
   const supabase = createServiceRoleClient();
   await supabase
     .from("delivery_commentary")
@@ -92,11 +77,7 @@ export async function runDeliveryCommentaryJob(
   deliveryCommittedAtMs?: number,
 ): Promise<void> {
   if (!isGeminiConfigured()) {
-    await markFailed(
-      context.clientEventId,
-      "GEMINI_API_KEY not configured",
-      context,
-    );
+    await markFailed(context.clientEventId, "GEMINI_API_KEY not configured");
     return;
   }
 
@@ -166,14 +147,7 @@ export async function runDeliveryCommentaryJob(
     );
     latency(context.clientEventId, "ephemeral_cache_set", deliveryCommittedAtMs);
 
-    markCommentaryReadyForController({
-      clientEventId: context.clientEventId,
-      matchId: context.matchId,
-      inningsId: context.inningsId,
-      sequenceInInnings: context.sequenceInInnings,
-    });
-
-    void supabase
+    const { error: readyError } = await supabase
       .from("delivery_commentary")
       .update({
         status: "ready",
@@ -181,16 +155,13 @@ export async function runDeliveryCommentaryJob(
         audio_storage_path: path,
         error_message: null,
       })
-      .eq("client_event_id", context.clientEventId)
-      .then(({ error: readyError }) => {
-        latency(context.clientEventId, "db_ready", deliveryCommittedAtMs, {
-          ok: !readyError,
-          error: readyError?.message ?? null,
-        });
-        if (readyError) {
-          console.error("[delivery-commentary] db ready:", readyError.message);
-        }
-      });
+      .eq("client_event_id", context.clientEventId);
+
+    if (readyError) {
+      throw new Error(readyError.message);
+    }
+
+    latency(context.clientEventId, "db_ready", deliveryCommittedAtMs);
 
     uploadCommentaryToStorage(
       path,
@@ -201,7 +172,7 @@ export async function runDeliveryCommentaryJob(
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Commentary failed";
-    await markFailed(context.clientEventId, message, context);
+    await markFailed(context.clientEventId, message);
   }
 }
 
