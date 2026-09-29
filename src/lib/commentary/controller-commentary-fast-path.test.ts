@@ -19,12 +19,15 @@ vi.mock("@/lib/commentary/delivery-commentary-audio-queue", async (importOrigina
     >();
   return {
     ...original,
-    enqueueCommentaryForPlayback: (...args: Parameters<
-      typeof original.enqueueCommentaryForPlayback
-    >) => {
+    enqueueCommentaryForPlayback: (
+      ...args: Parameters<typeof original.enqueueCommentaryForPlayback>
+    ) => {
       enqueueSpy(...args);
       return original.enqueueCommentaryForPlayback(...args);
     },
+    enqueueDeliveryCommentaryReady: (
+      ...args: Parameters<typeof original.enqueueCommentaryForPlayback>
+    ) => original.enqueueCommentaryForPlayback(...args),
   };
 });
 
@@ -93,28 +96,31 @@ afterEach(() => {
 });
 
 describe("controller commentary fast path", () => {
-  it("enqueues once when status stays ready across polls", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ ok: true, scheduled: true }),
-      })
-      .mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          ready: true,
-          status: "ready",
-          innings_id: payload().innings_id,
-          sequence_in_innings: 1,
-        }),
-      });
-    vi.stubGlobal("fetch", fetchMock);
+  it("enqueues once when wait-ready returns ready", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async (input: RequestInfo) => {
+        const url = String(input);
+        if (url.includes("/schedule")) {
+          return {
+            ok: true,
+            json: async () => ({ ok: true, scheduled: true }),
+          };
+        }
+        return {
+          ok: true,
+          json: async () => ({
+            ready: true,
+            status: "ready",
+            innings_id: payload().innings_id,
+            sequence_in_innings: 1,
+          }),
+        };
+      }),
+    );
 
     startControllerCommentaryFastPath({ payload: payload() });
-
-    await vi.advanceTimersByTimeAsync(500);
-    expect(enqueueSpy).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(enqueueSpy).toHaveBeenCalledTimes(1));
     expect(commentaryQueueTestState().readySequences).toEqual([1]);
   });
 

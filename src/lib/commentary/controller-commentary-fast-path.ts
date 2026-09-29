@@ -5,18 +5,18 @@ import {
   enqueueCommentaryForPlayback,
   isCommentaryPlaybackComplete,
   isCommentarySupersededForScorer,
+  markCommentaryAudioKnownReady,
 } from "@/lib/commentary/delivery-commentary-audio-queue";
 import type { DeliveryInputPayload } from "@/lib/validation/delivery";
 
 const watchesInFlight = new Set<string>();
 
-function statusUrl(clientEventId: string): string {
-  return `/api/scoring/delivery-commentary/${encodeURIComponent(clientEventId)}/status`;
+function waitReadyUrl(clientEventId: string): string {
+  return `/api/scoring/delivery-commentary/${encodeURIComponent(clientEventId)}/wait-ready`;
 }
 
 /**
- * Controller-only: start commentary as soon as the ball is committed locally,
- * then poll status (not Realtime) until audio is ready for playback.
+ * Controller-only: schedule + long-poll wait-ready (no client status backoff).
  */
 export function startControllerCommentaryFastPath(options: {
   payload: DeliveryInputPayload;
@@ -29,7 +29,7 @@ export function startControllerCommentaryFastPath(options: {
 
   void (async () => {
     try {
-      const scheduleRes = await fetch("/api/scoring/delivery-commentary/schedule", {
+      const schedulePromise = fetch("/api/scoring/delivery-commentary/schedule", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -38,6 +38,16 @@ export function startControllerCommentaryFastPath(options: {
           delivery_committed_at_ms: options.deliveryCommittedAtMs,
         }),
       });
+
+      const waitPromise = fetch(waitReadyUrl(clientEventId), {
+        credentials: "include",
+      });
+
+      const [scheduleRes, waitRes] = await Promise.all([
+        schedulePromise,
+        waitPromise,
+      ]);
+
       const scheduleBody = (await scheduleRes.json().catch(() => ({}))) as {
         error?: string;
         code?: string;
@@ -59,96 +69,80 @@ export function startControllerCommentaryFastPath(options: {
         },
       });
 
-      const deadline = Date.now() + 45_000;
-      let delayMs = 50;
-      while (Date.now() < deadline) {
+      if (isCommentaryPlaybackComplete(clientEventId)) {
+        return;
+      }
+
+      if (!waitRes.ok && waitRes.status !== 408) {
+        logCommentaryClientLatency({
+          clientEventId,
+          stage: "metadata_received",
+          deliveryCommittedAtMs: options.deliveryCommittedAtMs,
+          extra: {
+            kind: "controller_wait_ready_http_error",
+            httpStatus: waitRes.status,
+          },
+        });
+        return;
+      }
+
+      const json = (await waitRes.json().catch(() => ({}))) as {
+        ready?: boolean;
+        status?: string;
+        innings_id?: string;
+        sequence_in_innings?: number;
+        error_message?: string | null;
+      };
+
+      if (json.status === "failed") {
+        logCommentaryClientLatency({
+          clientEventId,
+          stage: "metadata_received",
+          deliveryCommittedAtMs: options.deliveryCommittedAtMs,
+          extra: {
+            kind: "controller_wait_ready_failed",
+            error_message: json.error_message ?? null,
+          },
+        });
+        return;
+      }
+
+      if (
+        json.ready &&
+        json.innings_id &&
+        json.sequence_in_innings != null
+      ) {
         if (isCommentaryPlaybackComplete(clientEventId)) {
           return;
         }
-        const statusRequestUrl = statusUrl(clientEventId);
-        const res = await fetch(statusRequestUrl, {
-          credentials: "include",
-        });
-        if (res.ok) {
-          const json = (await res.json()) as {
-            status?: string;
-            ready?: boolean;
-            innings_id?: string;
-            sequence_in_innings?: number;
-            error_message?: string | null;
-            error?: string;
-            code?: string;
-          };
-          if (json.ready && json.innings_id && json.sequence_in_innings != null) {
-            if (isCommentaryPlaybackComplete(clientEventId)) {
-              return;
-            }
-            if (
-              isCommentarySupersededForScorer(
-                clientEventId,
-                json.sequence_in_innings,
-              )
-            ) {
-              logCommentaryClientLatency({
-                clientEventId,
-                stage: "metadata_received",
-                deliveryCommittedAtMs: options.deliveryCommittedAtMs,
-                sequenceInInnings: json.sequence_in_innings,
-                extra: { kind: "controller_status_superseded" },
-              });
-              return;
-            }
-            logCommentaryClientLatency({
-              clientEventId,
-              stage: "metadata_received",
-              deliveryCommittedAtMs: options.deliveryCommittedAtMs,
-              sequenceInInnings: json.sequence_in_innings,
-              extra: { kind: "controller_status_ready" },
-            });
-            enqueueCommentaryForPlayback({
-              clientEventId,
-              inningsId: json.innings_id,
-              sequenceInInnings: json.sequence_in_innings,
-            });
-            return;
-          }
-          if (json.status === "failed") {
-            logCommentaryClientLatency({
-              clientEventId,
-              stage: "metadata_received",
-              deliveryCommittedAtMs: options.deliveryCommittedAtMs,
-              extra: {
-                kind: "controller_status_failed",
-                statusUrl: statusRequestUrl,
-                httpStatus: res.status,
-                dbStatus: json.status,
-                error_message: json.error_message ?? json.error ?? null,
-                code: json.code ?? null,
-              },
-            });
-            return;
-          }
-        } else {
-          const errBody = (await res.json().catch(() => ({}))) as {
-            error?: string;
-            code?: string;
-          };
+        if (
+          isCommentarySupersededForScorer(
+            clientEventId,
+            json.sequence_in_innings,
+          )
+        ) {
           logCommentaryClientLatency({
             clientEventId,
             stage: "metadata_received",
-            extra: {
-              kind: "controller_status_http_error",
-              statusUrl: statusRequestUrl,
-              httpStatus: res.status,
-              error: errBody.error ?? null,
-              code: errBody.code ?? null,
-            },
+            deliveryCommittedAtMs: options.deliveryCommittedAtMs,
+            sequenceInInnings: json.sequence_in_innings,
+            extra: { kind: "controller_wait_ready_superseded" },
           });
+          return;
         }
-        await new Promise<void>((resolve) => {
-          window.setTimeout(resolve, delayMs);
+        logCommentaryClientLatency({
+          clientEventId,
+          stage: "metadata_received",
+          deliveryCommittedAtMs: options.deliveryCommittedAtMs,
+          sequenceInInnings: json.sequence_in_innings,
+          extra: { kind: "controller_wait_ready" },
         });
-        delayMs = Math.min(Math.round(delayMs * 1.15), 180);
+        markCommentaryAudioKnownReady(clientEventId);
+        enqueueCommentaryForPlayback({
+          clientEventId,
+          inningsId: json.innings_id,
+          sequenceInInnings: json.sequence_in_innings,
+        });
       }
     } finally {
       watchesInFlight.delete(clientEventId);

@@ -25,6 +25,8 @@ const readyBySequence = new Map<number, CommentaryQueueItem>();
 const blobUrlCache = new Map<string, string>();
 const prefetchInFlight = new Set<string>();
 const prefetchAbortByClientEventId = new Map<string, AbortController>();
+/** Controller signalled audio exists — skip 404 retry backoff. */
+const audioKnownReady = new Set<string>();
 
 export type CommentaryPlaybackMode = "strict" | "scorer-latest";
 
@@ -56,6 +58,10 @@ export function setCommentaryPlaybackMode(mode: CommentaryPlaybackMode): void {
 
 export function isCommentaryPlaybackComplete(clientEventId: string): boolean {
   return playedClientEventIds.has(clientEventId);
+}
+
+export function markCommentaryAudioKnownReady(clientEventId: string): void {
+  audioKnownReady.add(clientEventId);
 }
 
 export function isCommentarySupersededForScorer(
@@ -299,8 +305,10 @@ async function prefetchAudioBlob(clientEventId: string): Promise<string | null> 
   const fetchStarted = Date.now();
 
   try {
+    const knownReady = audioKnownReady.has(clientEventId);
+    const maxAttempts = knownReady ? 2 : 6;
     let res: Response | null = null;
-    for (let attempt = 0; attempt < 12; attempt += 1) {
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       if (abortController.signal.aborted || staleSuperseded.has(clientEventId)) {
         return null;
       }
@@ -310,10 +318,12 @@ async function prefetchAudioBlob(clientEventId: string): Promise<string | null> 
       });
       if (res.ok) break;
       if (res.status !== 404) break;
+      if (knownReady || attempt + 1 >= maxAttempts) break;
       await new Promise<void>((r) => {
-        setTimeout(r, 120);
+        setTimeout(r, 40);
       });
     }
+    audioKnownReady.delete(clientEventId);
     if (staleSuperseded.has(clientEventId) || abortController.signal.aborted) {
       return null;
     }
@@ -656,6 +666,7 @@ export function resetDeliveryCommentaryQueueForTests(): void {
   for (const id of prefetchAbortByClientEventId.keys()) abortPrefetch(id);
   prefetchAbortByClientEventId.clear();
   prefetchInFlight.clear();
+  audioKnownReady.clear();
   playing = false;
   drainScheduled = false;
   nextSequenceToPlay = 1;
